@@ -1,0 +1,33 @@
+#!/bin/sh
+# Self-bootstrapping Gradle launcher for Campus Connect.
+# The official gradle-wrapper.jar is not committed; this script downloads
+# Gradle 8.14 once into ~/.gradle-bootstrap and runs it. Equivalent to the
+# standard wrapper for our purposes (`flutter run` / `flutter build apk`).
+set -e
+GRADLE_VERSION="8.14"
+BOOT_DIR="${HOME}/.gradle-bootstrap"
+DIST_DIR="${BOOT_DIR}/gradle-${GRADLE_VERSION}"
+APP_HOME="$(cd "$(dirname "$0")" && pwd)"
+
+if [ ! -x "${DIST_DIR}/bin/gradle" ]; then
+  echo "Downloading Gradle ${GRADLE_VERSION} (one-time)..."
+  mkdir -p "${BOOT_DIR}"
+  TMP_ZIP="${BOOT_DIR}/gradle-${GRADLE_VERSION}-bin.zip"
+  if command -v curl >/dev/null 2>&1; then
+    curl -L -o "${TMP_ZIP}" "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -O "${TMP_ZIP}" "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+  else
+    echo "Need curl or wget to bootstrap Gradle." >&2
+    exit 1
+  fi
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -q -o "${TMP_ZIP}" -d "${BOOT_DIR}"
+  else
+    echo "Need unzip to bootstrap Gradle." >&2
+    exit 1
+  fi
+  rm -f "${TMP_ZIP}"
+fi
+
+exec "${DIST_DIR}/bin/gradle" -p "${APP_HOME}" "$@"

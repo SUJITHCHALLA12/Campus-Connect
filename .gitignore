@@ -1,0 +1,37 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+flutter_*.png
+linked_*.dsym
+unlinked.ds
+unlinked.spec
+
+# Android
+android/.gradle/
+android/captures/
+android/local.properties
+**/gradle-wrapper-bootstrap/
+
+# iOS (not scaffolded for MVP)
+ios/
+
+# Secrets — never commit
+*.jks
+*.keystore
+google-services.json
+.env
