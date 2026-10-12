@@ -1,4 +1,6 @@
-import 'core/theme/cc_colors.dart';
+// Re-exported for convenience.
+export 'theme/cc_colors.dart';
+export 'theme/cc_glass.dart';
 
 /// App-wide constants. Visual tokens live in `core/theme/`.
 abstract final class AppConstants {
@@ -12,7 +14,3 @@ abstract final class AppConstants {
   /// How often the nearby list is pruned.
   static const Duration peerPruneInterval = Duration(seconds: 10);
 }
-
-// Re-exported for convenience.
-export 'core/theme/cc_colors.dart';
-export 'core/theme/cc_glass.dart';

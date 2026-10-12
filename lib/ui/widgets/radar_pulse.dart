@@ -82,7 +82,7 @@ class _RadarPainter extends CustomPainter {
         ).createShader(Rect.fromCircle(center: center, radius: 10)),
     );
     // Bluetooth glyph.
-    const glyph = TextSpan(
+    final glyph = TextSpan(
       text: String.fromCharCode(Icons.bluetooth.codePoint),
       style: TextStyle(
         fontFamily: Icons.bluetooth.fontFamily,
