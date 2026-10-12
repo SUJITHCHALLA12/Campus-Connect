@@ -16,10 +16,12 @@
 ```
 lib/
   main.dart            bootstrap: DB → identity → repository → BLE → UI
-  app.dart             MaterialApp + theme (placeholder palette!)
+  app.dart             MaterialApp + aquatic "liquid glass" theme
   core/
-    constants.dart     colors, timings
+    constants.dart     app name, timings (visual tokens in theme/)
+    theme/             cc_colors.dart, cc_glass.dart — design system
     identity.dart      userId (uuid v4) + display name, SharedPreferences
+    format.dart        chat time formatters
   ble/
     ble_protocol.dart  UUIDs, adv name format, BlePacket, FrameCodec
     ble_transport.dart BleChatService: peripheral + central roles, links, routing
@@ -28,10 +30,19 @@ lib/
     database.dart      sqflite schema
     chat_repository.dart persistence + unread + delivery states
   ui/
-    onboarding_screen.dart  display-name entry (first run)
-    home_screen.dart        nearby phones + chat list, permission flow
-    chat_screen.dart        1:1 chat, ticks, out-of-range handling
+    welcome_screen.dart   display-name entry (first run)
+    home_screen.dart      bottom tabs: Chats / Nearby / Settings
+    chat_screen.dart      1:1 chat, ticks, out-of-range handling
+    widgets/              aurora_background, message_bubble,
+                          glass_input_bar, radar_pulse
 ```
+
+The UI layer (v0.2) adapts the visual design language of the Ripple
+open-source chat app (Masthan008/Ripple) — aquatic palette, glass panels,
+bubble/input styling — reimplemented as original code on top of the
+BLE-first core. Ripple's Firebase/Supabase-backed features (auth, calls,
+social, gifts, AI, etc.) were intentionally not ported: v1 has no
+internet backend by design (Sujith's call, 2026-10-11).
 
 ## Data flow (sending "hi")
 

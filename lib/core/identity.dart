@@ -39,4 +39,14 @@ class IdentityStore extends ChangeNotifier {
     await prefs.setString(_kDisplayName, _displayName!);
     notifyListeners();
   }
+
+  /// Forgets this identity (used by "Reset" in Settings).
+  Future<void> clear() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kUserId);
+    await prefs.remove(_kDisplayName);
+    _userId = null;
+    _displayName = null;
+    notifyListeners();
+  }
 }

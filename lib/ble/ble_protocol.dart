@@ -167,7 +167,10 @@ class FrameCodec {
     final random = Random.secure();
     final msgId =
         Uint8List.fromList(List.generate(8, (_) => random.nextInt(256)));
-    final total = (payload.length / chunkSize).ceil().clamp(1, BleProtocol.maxChunks);
+    final total = (payload.length / chunkSize)
+        .ceil()
+        .clamp(1, BleProtocol.maxChunks)
+        .toInt();
     final frames = <Uint8List>[];
     for (var i = 0; i < total; i++) {
       final start = i * chunkSize;

@@ -265,7 +265,7 @@ class BleChatService extends ChangeNotifier {
           peer.peripheral,
           type: GATTCharacteristicWriteType.withResponse,
         );
-        chunk = (maxWrite - BleProtocol.frameHeaderLength).clamp(16, 512);
+        chunk = (maxWrite - BleProtocol.frameHeaderLength).clamp(16, 512).toInt();
       } catch (_) {}
 
       final link = PeerLink(
@@ -375,7 +375,7 @@ class BleChatService extends ChangeNotifier {
       try {
         final maxNotify =
             await _peripheral.getMaximumNotifyLength(e.central);
-        chunk = (maxNotify - BleProtocol.frameHeaderLength).clamp(16, 512);
+        chunk = (maxNotify - BleProtocol.frameHeaderLength).clamp(16, 512).toInt();
       } catch (_) {}
       link = PeerLink(
         shortId: packet.shortId!,

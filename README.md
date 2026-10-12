@@ -51,11 +51,24 @@ docs/        PROTOCOL.md, ARCHITECTURE.md
 
 ## Roadmap
 
-1. **M1** — BLE 1:1 chat MVP ✅ (this)
-2. **M2** — Privacy: ECDH + AES-GCM per conversation
-3. **M3** — Local group chats
-4. **M4** — Internet relay for distant users (Supabase project on standby)
-5. **M5** — iOS support
+1. **M1** — BLE 1:1 chat MVP ✅ (shipped 2026-10-11)
+2. **M1.5 / v0.2** — Ripple-inspired UI redesign ✅ (this): aquatic
+   liquid-glass design language adapted from the Ripple open-source chat
+   app (Masthan008/Ripple) — welcome screen, bottom-tab home
+   (Chats / Nearby / Settings), glass chat screen. Same BLE core underneath.
+3. **M2** — Privacy: ECDH + AES-GCM per conversation
+4. **M3** — Local group chats
+5. **M4** — Internet relay for distant users (Supabase project on standby)
+6. **M5** — iOS support
 
 Brand palette in the app is a placeholder — swap in the real logo colors
 from Figma when they're ready.
+
+## Credits
+
+- Visual design language adapted from **Ripple** by Masthan008
+  (https://github.com/Masthan008/Ripple) — aquatic palette, glassmorphism
+  panels, bubble and input-bar styling. Rebuilt here as original code
+  against Campus Connect's BLE-first architecture (no Firebase/Supabase
+  backend).
+- BLE transport uses the `bluetooth_low_energy` Flutter plugin.
