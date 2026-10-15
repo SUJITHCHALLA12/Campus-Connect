@@ -264,7 +264,8 @@ class FastFileTransferService {
     _discovered[endpointName] = endpointId;
   }
 
-  void _onEndpointLost(String endpointId) {
+  void _onEndpointLost(String? endpointId) {
+    if (endpointId == null) return;
     _discovered.removeWhere((_, id) => id == endpointId);
   }
 
