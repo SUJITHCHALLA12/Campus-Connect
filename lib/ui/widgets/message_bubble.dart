@@ -18,7 +18,16 @@ class MessageBubble extends StatelessWidget {
   /// not sending. Supplied by the chat screen from the repository.
   final double? progress;
 
-  const MessageBubble({super.key, required this.message, this.progress});
+  /// Sender's display name, shown above incoming messages in group
+  /// chats. Null in 1:1 chats.
+  final String? senderName;
+
+  const MessageBubble({
+    super.key,
+    required this.message,
+    this.progress,
+    this.senderName,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +46,22 @@ class MessageBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (senderName != null &&
+                message.direction == MessageDirection.incoming)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 2),
+                  child: Text(
+                    senderName!,
+                    style: GoogleFonts.nunito(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: CcColors.aquaCore,
+                    ),
+                  ),
+                ),
+              ),
             if (message.kind == MessageKind.file)
               _fileContent(outgoing)
             else
