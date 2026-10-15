@@ -41,6 +41,8 @@ abstract final class FileTransferService {
 
   /// Sends [bytes] as a chunked file transfer. Throws [StateError] if
   /// the link drops mid-transfer. Reports 0.0–1.0 progress per chunk.
+  /// [groupId] set → the file belongs to that group chat; the
+  /// receiver stores it in the group conversation, not the 1:1 chat.
   static Future<void> sendFile({
     required PacketSender send,
     required String from,
@@ -50,6 +52,7 @@ abstract final class FileTransferService {
     required Uint8List bytes,
     required String mimeType,
     void Function(double progress)? onProgress,
+    String? groupId,
   }) async {
     final startOk = await send(BlePacket.fileStart(
       transferId: transferId,
@@ -58,6 +61,7 @@ abstract final class FileTransferService {
       fileName: fileName,
       fileSize: bytes.length,
       mimeType: mimeType,
+      groupId: groupId,
     ));
     if (!startOk) throw StateError('No link to peer');
 
@@ -73,6 +77,7 @@ abstract final class FileTransferService {
         name: name,
         seq: i,
         data: chunk,
+        groupId: groupId,
       ));
       if (!ok) throw StateError('Link lost during transfer');
       onProgress?.call((i + 1) / totalChunks);
@@ -82,6 +87,7 @@ abstract final class FileTransferService {
       transferId: transferId,
       from: from,
       name: name,
+      groupId: groupId,
     ));
     if (!endOk) throw StateError('Link lost finishing transfer');
   }
@@ -95,6 +101,7 @@ class _IncomingFile {
   final String from;
   final String name;
   final int ts;
+  final String? groupId;
   final Map<int, Uint8List> chunks = {};
 
   _IncomingFile({
@@ -104,6 +111,7 @@ class _IncomingFile {
     required this.from,
     required this.name,
     required this.ts,
+    this.groupId,
   });
 }
 
@@ -116,6 +124,7 @@ class CompletedFile {
   final String name;
   final int ts;
   final Uint8List bytes;
+  final String? groupId;
 
   CompletedFile({
     required this.fileName,
@@ -125,6 +134,7 @@ class CompletedFile {
     required this.name,
     required this.ts,
     required this.bytes,
+    this.groupId,
   });
 }
 
@@ -144,6 +154,7 @@ class FileReceiver {
       from: packet.from,
       name: packet.name,
       ts: packet.ts,
+      groupId: packet.groupId,
     );
   }
 
@@ -180,6 +191,7 @@ class FileReceiver {
       name: file.name,
       ts: file.ts,
       bytes: bytes,
+      groupId: file.groupId,
     );
   }
 }

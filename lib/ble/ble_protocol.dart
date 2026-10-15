@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
 import 'package:uuid/uuid.dart';
 
+import '../data/group_permissions.dart';
+
 /// Wire protocol for the Campus Connect BLE transport (v1).
 ///
 /// Role model: every phone runs BOTH roles at once —
@@ -77,6 +79,9 @@ abstract final class BleProtocol {
 ///             once an incoming file is saved (carries the local path)
 ///   * groupMsg — a message to a group chat (carries group id, name and
 ///             the member map so a receiver can create the group)
+///   * groupUpdate — group permissions changed by the owner
+///             (carries group id, owner id and the permission set;
+///             receivers apply it only when the sender IS the owner)
 ///   * edit — replaces the text of a message the sender authored
 ///             (carries the edited message's id; only the author may
 ///             edit, and only within 5 minutes of sending)
@@ -110,6 +115,13 @@ class BlePacket {
   final String? replyToSender;
   final bool forwarded;
 
+  /// Group owner (creator) user id, carried on group packets.
+  final String? ownerId;
+
+  /// Group permissions (send / edit-info / add-members), carried on
+  /// group packets so receivers learn the current set.
+  final GroupPermissions permissions;
+
   BlePacket({
     required this.type,
     required this.id,
@@ -135,6 +147,8 @@ class BlePacket {
     this.replyToText,
     this.replyToSender,
     this.forwarded = false,
+    this.ownerId,
+    this.permissions = const GroupPermissions(),
   });
 
   factory BlePacket.hello({
@@ -187,7 +201,8 @@ class BlePacket {
       );
 
   /// Starts a file transfer. [id] is the transfer id — the receiver's
-  /// saved file message and the sender's ack both use it.
+  /// saved file message and the sender's ack both use it. [groupId]
+  /// set → the file belongs to that group chat, not a 1:1 chat.
   factory BlePacket.fileStart({
     required String transferId,
     required String from,
@@ -195,6 +210,7 @@ class BlePacket {
     required String fileName,
     required int fileSize,
     required String mimeType,
+    String? groupId,
   }) =>
       BlePacket(
         type: 'fileStart',
@@ -205,6 +221,7 @@ class BlePacket {
         fileName: fileName,
         fileSize: fileSize,
         mimeType: mimeType,
+        groupId: groupId,
       );
 
   /// One chunk of a file transfer. [data] is base64 of up to
@@ -215,6 +232,7 @@ class BlePacket {
     required String name,
     required int seq,
     required String data,
+    String? groupId,
   }) =>
       BlePacket(
         type: 'fileChunk',
@@ -224,6 +242,7 @@ class BlePacket {
         ts: DateTime.now().millisecondsSinceEpoch,
         seq: seq,
         data: data,
+        groupId: groupId,
       );
 
   /// Ends a file transfer; the receiver assembles and saves the file.
@@ -231,6 +250,7 @@ class BlePacket {
     required String transferId,
     required String from,
     required String name,
+    String? groupId,
   }) =>
       BlePacket(
         type: 'fileEnd',
@@ -238,10 +258,12 @@ class BlePacket {
         from: from,
         name: name,
         ts: DateTime.now().millisecondsSinceEpoch,
+        groupId: groupId,
       );
 
   /// Synthetic packet the transport emits after saving an incoming
   /// file, so the repository can store it as a file message.
+  /// [groupId] set → the file belongs to that group chat.
   factory BlePacket.file({
     required String transferId,
     required String from,
@@ -251,6 +273,7 @@ class BlePacket {
     required int fileSize,
     required String mimeType,
     required String filePath,
+    String? groupId,
   }) =>
       BlePacket(
         type: 'file',
@@ -263,12 +286,15 @@ class BlePacket {
         fileSize: fileSize,
         mimeType: mimeType,
         filePath: filePath,
+        groupId: groupId,
       );
 
   /// A message to a group chat. [members] maps every member's user id
   /// to their display name so a receiver who has never seen this group
   /// can create it locally. The sender fans the packet out to each
-  /// member over their 1:1 BLE link.
+  /// member over their 1:1 BLE link. [ownerId] / [permissions]
+  /// ride along so a receiver learning the group from this message
+  /// gets the correct owner and permission set.
   factory BlePacket.groupMsg({
     required String from,
     required String name,
@@ -280,6 +306,8 @@ class BlePacket {
     String? replyToText,
     String? replyToSender,
     bool forwarded = false,
+    String? ownerId,
+    GroupPermissions permissions = const GroupPermissions(),
   }) =>
       BlePacket(
         type: 'groupMsg',
@@ -295,6 +323,29 @@ class BlePacket {
         replyToText: replyToText,
         replyToSender: replyToSender,
         forwarded: forwarded,
+        ownerId: ownerId,
+        permissions: permissions,
+      );
+
+  /// Group permissions changed by the owner. Fanned out to all
+  /// members; receivers apply it only when the sender IS the claimed
+  /// owner (`from == ownerId`), so a non-owner cannot spoof a change.
+  factory BlePacket.groupUpdate({
+    required String from,
+    required String name,
+    required String groupId,
+    required String ownerId,
+    required GroupPermissions permissions,
+  }) =>
+      BlePacket(
+        type: 'groupUpdate',
+        id: const Uuid().v4(),
+        from: from,
+        name: name,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        groupId: groupId,
+        ownerId: ownerId,
+        permissions: permissions,
       );
 
   /// Replaces the text of a message the sender authored. [editId] is
@@ -381,6 +432,15 @@ class BlePacket {
         if (replyToText != null) 'replyText': replyToText,
         if (replyToSender != null) 'replyName': replyToSender,
         if (forwarded) 'fwd': true,
+        if (ownerId != null) 'owner': ownerId,
+        // The permission set rides on every group packet
+        // (groupMsg/groupUpdate) so receivers learn the current set;
+        // plain 1:1 packets omit it (all-Everyone + no group id).
+        if (groupId != null) ...{
+          'permSend': permissions.sendMessagesOnlyOwner,
+          'permEdit': permissions.editInfoOnlyOwner,
+          'permAdd': permissions.addMembersOnlyOwner,
+        },
       };
 
   factory BlePacket.fromJson(Map<String, dynamic> json) => BlePacket(
@@ -410,6 +470,13 @@ class BlePacket {
         replyToText: json['replyText'] as String?,
         replyToSender: json['replyName'] as String?,
         forwarded: (json['fwd'] as bool?) ?? false,
+        ownerId: json['owner'] as String?,
+        permissions: GroupPermissions(
+          sendMessagesOnlyOwner:
+              (json['permSend'] as bool?) ?? false,
+          editInfoOnlyOwner: (json['permEdit'] as bool?) ?? false,
+          addMembersOnlyOwner: (json['permAdd'] as bool?) ?? false,
+        ),
       );
 
   Uint8List encode() => Uint8List.fromList(utf8.encode(jsonEncode(toJson())));

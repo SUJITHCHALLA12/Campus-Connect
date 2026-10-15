@@ -590,6 +590,18 @@ class BleChatService extends ChangeNotifier {
               name: identity.displayName,
             )));
         break;
+      case 'groupUpdate':
+        // Owner-only group settings (see BlePacket.groupUpdate).
+        // The repository applies it only when the sender is the owner.
+        _incoming.add(packet);
+        unawaited(_writeToLink(
+            link,
+            BlePacket.ack(
+              forId: packet.id,
+              from: identity.userId,
+              name: identity.displayName,
+            )));
+        break;
       case 'edit':
       case 'delete':
       case 'react':
@@ -631,6 +643,7 @@ class BleChatService extends ChangeNotifier {
       fileSize: completed.fileSize,
       mimeType: completed.mimeType,
       filePath: path,
+      groupId: completed.groupId,
     ));
     await _writeToLink(
         link,
