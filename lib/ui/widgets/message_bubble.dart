@@ -5,8 +5,8 @@ import '../../core/theme/cc_colors.dart';
 import '../../core/theme/cc_glass.dart';
 import '../../data/models.dart';
 
-/// Chat message bubble in Ripple's style: frosted incoming, aqua-gradient
-/// outgoing, with timestamp + delivery ticks tucked in the corner.
+/// Chat message bubble: frosted incoming, aqua-gradient outgoing,
+/// with timestamp + delivery ticks tucked in the corner.
 class MessageBubble extends StatelessWidget {
   final ChatMessage message;
 

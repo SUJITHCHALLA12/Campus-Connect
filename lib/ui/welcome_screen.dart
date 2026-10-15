@@ -7,7 +7,7 @@ import '../core/identity.dart';
 import 'widgets/aurora_background.dart';
 
 /// First-run screen: pick the display name nearby phones will see.
-/// Ripple-style welcome — deep abyss, bioluminescent glow, glass input.
+/// Deep abyss, bioluminescent glow, glass input.
 class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
 

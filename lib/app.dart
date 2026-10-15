@@ -8,8 +8,8 @@ import 'core/identity.dart';
 import 'ui/home_screen.dart';
 import 'ui/welcome_screen.dart';
 
-/// Root widget — aquatic "liquid glass" theme adapted from Ripple's
-/// design language, wired to the BLE-first Campus Connect core.
+/// Root widget — aquatic "liquid glass" theme, wired to the
+/// BLE-first Campus Connect core.
 class CampusConnectApp extends StatelessWidget {
   const CampusConnectApp({super.key});
 

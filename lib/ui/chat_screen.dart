@@ -12,8 +12,8 @@ import 'widgets/aurora_background.dart';
 import 'widgets/glass_input_bar.dart';
 import 'widgets/message_bubble.dart';
 
-/// 1:1 chat with a nearby phone — Ripple-style glass app bar, bubbles
-/// and composer, powered by the BLE transport underneath.
+/// 1:1 chat with a nearby phone — glass app bar, bubbles and composer,
+/// powered by the BLE transport underneath.
 class ChatScreen extends StatefulWidget {
   final String peerUserId;
   final String peerName;

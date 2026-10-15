@@ -37,12 +37,10 @@ lib/
                           glass_input_bar, radar_pulse
 ```
 
-The UI layer (v0.2) adapts the visual design language of the Ripple
-open-source chat app (Masthan008/Ripple) — aquatic palette, glass panels,
-bubble/input styling — reimplemented as original code on top of the
-BLE-first core. Ripple's Firebase/Supabase-backed features (auth, calls,
-social, gifts, AI, etc.) were intentionally not ported: v1 has no
-internet backend by design (Sujith's call, 2026-10-11).
+The UI layer (v0.2) uses an aquatic liquid-glass design language —
+aquatic palette, glass panels, bubble/input styling — implemented as
+original code on top of the BLE-first core. v1 has no internet backend
+by design (Sujith's call, 2026-10-11).
 
 ## Data flow (sending "hi")
 

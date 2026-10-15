@@ -17,8 +17,8 @@ import 'chat_screen.dart';
 import 'widgets/aurora_background.dart';
 import 'widgets/radar_pulse.dart';
 
-/// Home shell: bottom-tab navigation across Chats, Nearby and Settings —
-/// the same three zones Ripple's nav exposes, rebuilt for BLE.
+/// Home shell: bottom-tab navigation across Chats, Nearby and Settings,
+/// rebuilt for BLE.
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 

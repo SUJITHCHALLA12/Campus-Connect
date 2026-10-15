@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme/cc_colors.dart';
 
-/// Ambient aquatic background: deep abyss with two soft aqua glows,
-/// echoing Ripple's bioluminescent look. Place first in a Stack.
+/// Ambient aquatic background: deep abyss with two soft aqua glows and
+/// a bioluminescent look. Place first in a Stack.
 class AuroraBackground extends StatelessWidget {
   const AuroraBackground({super.key});
 

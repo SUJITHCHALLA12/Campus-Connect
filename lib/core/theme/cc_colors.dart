@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Campus Connect color system — aquatic "liquid glass" design language
-/// adapted from the Ripple open-source chat app (Masthan008/Ripple).
+/// Campus Connect color system — aquatic "liquid glass" design language.
 ///
 /// Palette is still a placeholder until the real Campus Connect logo
 /// colors arrive from Figma; the structure below makes that a one-file swap.

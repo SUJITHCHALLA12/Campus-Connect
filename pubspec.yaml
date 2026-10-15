@@ -19,7 +19,7 @@ dependencies:
   permission_handler: ^12.0.0
   device_info_plus: ^11.2.0
 
-  # Typography (matches the Ripple design language)
+  # Typography
   google_fonts: ^6.2.1
 
 dev_dependencies:
