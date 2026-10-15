@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 import '../../core/theme/cc_colors.dart';
 
 /// Expanding-ring "sonar" animation for the Nearby tab header —
-/// a Campus Connect original in bioluminescent style.
+/// a Campus Connect original, drawn in the app's own bioluminescent
+/// style.
 class RadarPulse extends StatefulWidget {
   final double size;
 
