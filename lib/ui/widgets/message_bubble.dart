@@ -46,6 +46,11 @@ class MessageBubble extends StatefulWidget {
   /// reactions pill.
   final ValueChanged<Offset>? onReactionTap;
 
+  /// Per-chat theme overrides for this chat's own bubbles (1:1 chats).
+  /// Null keeps the default Ocean gradient. Group chats pass nothing.
+  final LinearGradient? outgoingGradient;
+  final Color? outgoingBorderColor;
+
   const MessageBubble({
     super.key,
     required this.message,
@@ -55,6 +60,8 @@ class MessageBubble extends StatefulWidget {
     this.onTap,
     this.onSwipeReply,
     this.onReactionTap,
+    this.outgoingGradient,
+    this.outgoingBorderColor,
   });
 
   @override
@@ -106,7 +113,10 @@ class _MessageBubbleState extends State<MessageBubble> {
                           MediaQuery.of(context).size.width * 0.75,
                     ),
                     decoration: outgoing
-                        ? CcGlass.bubbleOutgoing()
+                        ? CcGlass.bubbleOutgoing(
+                            gradient: widget.outgoingGradient,
+                            borderColor: widget.outgoingBorderColor,
+                          )
                         : CcGlass.bubbleIncoming(),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
