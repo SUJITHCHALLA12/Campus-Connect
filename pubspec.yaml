@@ -28,7 +28,9 @@ dependencies:
   open_filex: ^4.0.0
 
   # Voice messages: record, play back, emoji picker.
-  record: ^5.0.0
+  # record ^6: the 5.x line is broken against the current
+  # record_linux 0.7.x platform package (missing startStream).
+  record: ^6.0.0
   audioplayers: ^6.0.0
   emoji_picker_flutter: ^4.0.0
 

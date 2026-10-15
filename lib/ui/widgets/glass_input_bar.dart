@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+// google_fonts also exports a `Config` — hide it so `Config(...)`
+// below unambiguously means the emoji picker's config.
+import 'package:google_fonts/google_fonts.dart' hide Config;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -219,7 +221,10 @@ class _GlassInputBarState extends State<GlassInputBar> {
             SizedBox(
               height: 250,
               child: EmojiPicker(
-                onEmojiSelected: (emoji) => _insertEmoji(emoji),
+                // 4.x callback passes (category, emoji) — both params
+                // required; a one-param lambda binds to Category?.
+                onEmojiSelected: (category, emoji) =>
+                    _insertEmoji(emoji),
                 onBackspacePressed: _deleteEmojiChar,
                 config: Config(
                   bgColor: CcColors.deepSea,
