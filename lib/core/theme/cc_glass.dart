@@ -30,8 +30,14 @@ abstract final class CcGlass {
       );
 
   /// Outgoing message bubble: aqua gradient with a soft glow.
-  static BoxDecoration bubbleOutgoing() => BoxDecoration(
-        gradient: CcColors.msgOutGradient,
+  /// [gradient] / [borderColor] override the defaults for per-chat
+  /// themes; null keeps the app-wide Ocean look.
+  static BoxDecoration bubbleOutgoing({
+    LinearGradient? gradient,
+    Color? borderColor,
+  }) =>
+      BoxDecoration(
+        gradient: gradient ?? CcColors.msgOutGradient,
         borderRadius: const BorderRadius.only(
           topLeft: Radius.circular(20),
           topRight: Radius.circular(4),
@@ -39,12 +45,13 @@ abstract final class CcGlass {
           bottomRight: Radius.circular(20),
         ),
         border: Border.all(
-          color: CcColors.aquaCore.withValues(alpha: 0.4),
+          color: (borderColor ?? CcColors.aquaCore).withValues(alpha: 0.4),
           width: 0.5,
         ),
         boxShadow: [
           BoxShadow(
-            color: CcColors.aquaCore.withValues(alpha: 0.15),
+            color: (borderColor ?? CcColors.aquaCore)
+                .withValues(alpha: 0.15),
             blurRadius: 12,
             offset: const Offset(0, 4),
           ),
