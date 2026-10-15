@@ -32,6 +32,10 @@ jobs:
       - run: flutter pub get
 
       # Stable release signing: restore the keystore from secrets so
+      # NOTE: key.properties MUST live at android/key.properties —
+      # build.gradle.kts reads rootProject.file("key.properties"),
+      # and rootProject is android/. Writing it to the repo root
+      # silently falls back to debug signing (seen 2026-10-15).
       # every build carries the SAME signature. Without this, each CI
       # run signs with a fresh debug key, Android refuses to install
       # the update over the old app, and the user must uninstall —
@@ -47,7 +51,7 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
             printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
-              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > key.properties
+              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/key.properties
             echo "Release keystore restored."
           else
             echo "WARNING: KEYSTORE_BASE64 not set — falling back to debug signing. Updates will NOT install over the old app."
