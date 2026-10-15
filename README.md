@@ -3,7 +3,7 @@
 Nearby-first campus messaging over **Bluetooth Low Energy**. No internet, no
 servers, no accounts — open the app near another phone running it and chat.
 
-> **Status:** v0.6 (Android). Messages are currently **plaintext**
+> **Status:** v0.7 (Android). Messages are currently **plaintext**
 > over the air; per-conversation encryption is a planned milestone, not a
 > claim. See `docs/ARCHITECTURE.md`.
 
@@ -73,15 +73,21 @@ docs/        PROTOCOL.md, ARCHITECTURE.md
    input pill (emoji · Message · attach · camera), send button when
    typing / mic button when empty, tap-to-record voice notes (60 s cap)
    sent as audio file transfers, emoji picker, voice bubble playback.
-6. **M1.9 / v0.6** — Live distance + message actions ✅ (this): chat
+6. **M1.9 / v0.6** — Live distance + message actions ✅: chat
    header shows the peer's estimated distance (RSSI, 3 decimals,
    refreshed every 30 s). Long-press a message for Reply / React /
    Edit (own text, 5 min window) / Copy / Forward / Info / Delete
    (for me / for everyone). Slide any bubble to reply; replies carry
    a quote, forwarded messages a label, edits an "Edited" tag.
-7. **M2** — Privacy: ECDH + AES-GCM per conversation
-8. **M4** — Internet relay for distant users (Supabase project on standby)
-9. **M5** — iOS support
+7. **M1.10 / v0.7** — Startup popups ✅ (this): Bluetooth permission
+   prompts, then a "Turn on Bluetooth?" popup when Bluetooth is off
+   (Turn on opens system Bluetooth settings; Not now leaves a
+   tap-to-turn-on banner). On launch the app also checks
+   `version.json` on main — when a newer release is out it offers an
+   Update popup that opens the Releases page.
+8. **M2** — Privacy: ECDH + AES-GCM per conversation
+9. **M4** — Internet relay for distant users (Supabase project on standby)
+10. **M5** — iOS support
 
 The app theme follows the logo: cyan → violet gradients on a deep-navy
 background, with the logo on the splash and welcome screens.

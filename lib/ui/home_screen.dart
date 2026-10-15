@@ -1,11 +1,13 @@
 import 'dart:io';
 
+import 'package:android_intent_plus/android_intent.dart';
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../ble/ble_transport.dart';
 import '../core/constants.dart';
@@ -13,6 +15,7 @@ import '../core/format.dart';
 import '../core/identity.dart';
 import '../data/chat_repository.dart';
 import '../data/models.dart';
+import '../services/update_checker.dart';
 import 'chat_screen.dart';
 import 'create_group_screen.dart';
 import 'group_chat_screen.dart';
@@ -30,17 +33,40 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with WidgetsBindingObserver {
   int _bottom = 1; // Start on Chats, like the mock.
   bool _starting = true;
   String? _error;
   bool _searching = false;
   String _query = '';
+  bool _bleStarted = false;
+  bool _bluetoothOff = false;
+  bool _updateChecked = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _boot();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// The user may have flipped Bluetooth on in system settings while
+  /// we were away — start BLE when we come back and it is on.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    if (_bleStarted || _error != null) return;
+    if (CentralManager().state != BluetoothLowEnergyState.poweredOn) {
+      return;
+    }
+    _startBle();
   }
 
   Future<void> _boot() async {
@@ -53,12 +79,151 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       return;
     }
+
+    // Bluetooth on/off popup: ask before starting BLE, like other
+    // apps ask at launch. If Bluetooth is off, offer to turn it on;
+    // "Not now" keeps the app usable, with an off-banner on top.
+    if (CentralManager().state == BluetoothLowEnergyState.poweredOff) {
+      final turnOn = await _showBluetoothDialog();
+      if (turnOn == true) {
+        await _openBluetoothSettings();
+        // Don't start BLE yet — the resume handler starts it once
+        // the user is back and Bluetooth is on.
+        if (mounted) {
+          setState(() {
+            _starting = false;
+            _bluetoothOff = true;
+          });
+        }
+        _checkForUpdate();
+        return;
+      }
+      if (mounted) {
+        setState(() {
+          _starting = false;
+          _bluetoothOff = true;
+        });
+      }
+      _checkForUpdate();
+      return;
+    }
+
+    await _startBle();
+    _checkForUpdate();
+  }
+
+  Future<void> _startBle() async {
     try {
       await context.read<BleChatService>().start();
+      _bleStarted = true;
+      if (mounted) {
+        setState(() {
+          _starting = false;
+          _bluetoothOff = false;
+        });
+      }
     } catch (e) {
-      _error = 'Could not start Bluetooth: $e';
+      if (mounted) {
+        setState(() {
+          _starting = false;
+          _error = 'Could not start Bluetooth: $e';
+        });
+      }
     }
-    if (mounted) setState(() => _starting = false);
+  }
+
+  /// "Turn on Bluetooth?" popup. Returns true for Turn on,
+  /// false for Not now.
+  Future<bool?> _showBluetoothDialog() {
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: CcColors.deepSea,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        title: Text('Turn on Bluetooth',
+            style: GoogleFonts.nunito(
+                fontWeight: FontWeight.w700,
+                color: CcColors.textPrimary)),
+        content: Text(
+          'Campus Connect finds nearby phones over Bluetooth — no '
+          'internet needed. Turn Bluetooth on to start chatting.',
+          style: GoogleFonts.dmSans(color: CcColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text('Not now',
+                style: GoogleFonts.nunito(color: CcColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text('Turn on',
+                style: GoogleFonts.nunito(
+                    fontWeight: FontWeight.w800,
+                    color: CcColors.aquaCyan)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openBluetoothSettings() async {
+    try {
+      await AndroidIntent(
+        action: 'android.settings.BLUETOOTH_SETTINGS',
+      ).launch();
+    } catch (_) {
+      // If the settings screen can't open, the user can flip
+      // Bluetooth on manually; the banner stays until it is on.
+    }
+  }
+
+  /// One-shot update check: if a newer release is out, offer it.
+  Future<void> _checkForUpdate() async {
+    if (_updateChecked) return;
+    _updateChecked = true;
+    final update = await checkForUpdate();
+    if (update == null || !mounted) return;
+    await showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: CcColors.deepSea,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        title: Text('Update available',
+            style: GoogleFonts.nunito(
+                fontWeight: FontWeight.w700,
+                color: CcColors.textPrimary)),
+        content: Text(
+          'Version ${update.remoteVersion} is out — you\'re on '
+          '${update.currentVersion}. Get the latest fixes and '
+          'features.',
+          style: GoogleFonts.dmSans(color: CcColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: Text('Later',
+                style: GoogleFonts.nunito(color: CcColors.textMuted)),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await launchUrl(
+                Uri.parse(update.url),
+                mode: LaunchMode.externalApplication,
+              );
+            },
+            child: Text('Update',
+                style: GoogleFonts.nunito(
+                    fontWeight: FontWeight.w800,
+                    color: CcColors.aquaCyan)),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<bool> _ensurePermissions() async {
@@ -195,6 +360,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               children: [
                 if (_bottom != 0) _header(),
+                if (_bluetoothOff) _bluetoothBanner(),
                 Expanded(
                   child: _starting
                       ? const Center(
@@ -220,6 +386,44 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: _starting || _error != null
           ? null
           : _bottomNav(),
+    );
+  }
+
+  /// Slim banner while Bluetooth is off, after the user tapped
+  /// "Not now". Tapping it opens Bluetooth settings.
+  Widget _bluetoothBanner() {
+    return GestureDetector(
+      onTap: _openBluetoothSettings,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: CcColors.deepSea,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: CcColors.glassBorder.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.bluetooth_disabled_rounded,
+                color: CcColors.textMuted, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Bluetooth is off — nearby chat needs it. Tap to turn on.',
+                style: GoogleFonts.dmSans(
+                  fontSize: 13,
+                  color: CcColors.textSecondary,
+                ),
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: CcColors.textMuted, size: 20),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1167,7 +1371,7 @@ class _ProfilePage extends StatelessWidget {
         const SizedBox(height: 24),
         Center(
           child: Text(
-            'Campus Connect v0.6 · BLE-first · plaintext v1',
+            'Campus Connect v0.7 · BLE-first · plaintext v1',
             style: GoogleFonts.dmSans(
               fontSize: 11,
               color: CcColors.textMuted,
@@ -1287,7 +1491,7 @@ class _ProfilePage extends StatelessWidget {
         content: Text(
           'Nearby-first campus messaging over Bluetooth Low Energy. '
           'Chat with phones around you — no internet, no servers, no accounts.\n\n'
-          'v0.6 messages are plaintext over the air; per-conversation '
+          'v0.7 messages are plaintext over the air; per-conversation '
           'encryption is on the roadmap.',
           style: GoogleFonts.dmSans(
               color: CcColors.textSecondary, fontSize: 14),

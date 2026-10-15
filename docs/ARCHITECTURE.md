@@ -1,4 +1,4 @@
-# Campus Connect — Architecture (v0.6)
+# Campus Connect — Architecture (v0.7)
 
 ## Decision log
 
@@ -90,6 +90,24 @@ repository stores it with kind `voice` (sender passes the kind
 explicitly; the receiver detects `audio/*` mimes), and the chat renders
 a play/pause bubble with progress instead of a file tile. Group chats
 do not send voice yet — their composer shows the send button only.
+
+## Startup popups (v0.7)
+
+**Bluetooth.** Home boot requests the BLE permissions (scan /
+advertise / connect, + location on Android ≤ 30), then checks the
+adapter state. If Bluetooth is off, a "Turn on Bluetooth?" popup
+appears: Turn on opens the system Bluetooth settings (Android has no
+public API for an app to flip Bluetooth on itself); Not now leaves
+the app usable with a tap-to-turn-on "Bluetooth is off" banner.
+Returning from settings with Bluetooth on starts BLE via the app
+lifecycle resume hook.
+
+**Update.** On launch the app fetches `version.json` from the repo's
+main branch (5 s timeout, silent on failure) and compares its
+`version` + `build` with the install's. When a newer release is out,
+an "Update available" popup offers Update (opens the Releases page)
+or Later (once per session). `version.json` must be bumped with
+every release, alongside pubspec.
 
 ## Live distance + message actions (v0.6)
 
