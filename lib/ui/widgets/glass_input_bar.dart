@@ -226,10 +226,12 @@ class _GlassInputBarState extends State<GlassInputBar> {
                 onEmojiSelected: (category, emoji) =>
                     _insertEmoji(emoji),
                 onBackspacePressed: _deleteEmojiChar,
+                // 4.5.x Config has no bgColor — colours live in the
+                // sub-configs; the emoji grid gets the dark background.
                 config: Config(
-                  bgColor: CcColors.deepSea,
-                  indicatorColor: CcColors.aquaCore,
-                  iconColorSelected: CcColors.aquaCore,
+                  emojiViewConfig: EmojiViewConfig(
+                    backgroundColor: CcColors.deepSea,
+                  ),
                 ),
               ),
             ),
