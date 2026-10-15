@@ -1,15 +1,22 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../ble/ble_protocol.dart';
 import '../ble/ble_transport.dart';
+import '../ble/file_transfer.dart';
 import '../core/constants.dart';
 import '../core/identity.dart';
 import '../data/chat_repository.dart';
 import '../data/models.dart';
 import 'forward_screen.dart';
+import 'group_info_screen.dart';
 import 'message_actions.dart';
 import 'widgets/aurora_background.dart';
 import 'widgets/glass_input_bar.dart';
@@ -52,36 +59,51 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _sending) return;
+    final identity = context.read<IdentityStore>();
+    final group = _currentGroup();
+    if (_isRestricted(group, identity.userId)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Only the owner can send messages in this group.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
     setState(() => _sending = true);
     _controller.clear();
     final replyingTo = _replyingTo;
     setState(() => _replyingTo = null);
 
-    final identity = context.read<IdentityStore>();
     final ble = context.read<BleChatService>();
     final repo = context.read<ChatRepository>();
 
     // The packet carries the full roster (including self) so receivers
     // who have never seen this group can create it with all names.
-    final members = Map<String, String>.from(widget.group.members)
+    // Owner + settings ride along so they learn the correct ones.
+    final members = Map<String, String>.from(group.members)
       ..[identity.userId] = identity.displayName;
     final packet = BlePacket.groupMsg(
       from: identity.userId,
       name: identity.displayName,
       text: text,
-      groupId: widget.group.id,
-      groupName: widget.group.name,
+      groupId: group.id,
+      groupName: group.name,
       members: members,
       replyToId: replyingTo?.id,
       replyToText:
           replyingTo == null ? null : _quoteText(replyingTo),
       replyToSender:
           replyingTo == null ? null : _senderNameOf(replyingTo),
+      ownerId: group.ownerId,
+      permissions: group.permissions,
     );
-    await repo.saveOutgoingGroupMsg(group: widget.group, packet: packet);
+    await repo.saveOutgoingGroupMsg(group: group, packet: packet);
 
     var delivered = 0;
-    for (final memberId in widget.group.members.keys) {
+    for (final memberId in group.members.keys) {
       if (await ble.sendTo(memberId, packet)) delivered++;
     }
     if (delivered == 0) {
@@ -116,11 +138,25 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   Future<int> _fanOut(BlePacket packet) async {
     final ble = context.read<BleChatService>();
     var delivered = 0;
-    for (final memberId in widget.group.members.keys) {
+    for (final memberId in _currentGroup().members.keys) {
       if (await ble.sendTo(memberId, packet)) delivered++;
     }
     return delivered;
   }
+
+  /// Fresh copy of this group from the repository (the widget's copy
+  /// goes stale when settings/photo change elsewhere).
+  Group _currentGroup() =>
+      context.read<ChatRepository>().groupById(widget.group.id) ??
+      widget.group;
+
+  /// True when this phone may not send in [group]: owner-only
+  /// messaging is on and this phone is not the owner. Groups with no
+  /// known owner (pre-v0.9) are never restricted.
+  bool _isRestricted(Group group, String myUserId) =>
+      group.permissions.sendMessagesOnlyOwner &&
+      group.ownerId != null &&
+      group.ownerId != myUserId;
 
   String _quoteText(ChatMessage m) {
     switch (m.kind) {
@@ -135,7 +171,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
 
   String _senderNameOf(ChatMessage m) =>
       m.direction == MessageDirection.incoming
-          ? widget.group.members[m.senderId] ?? 'Someone'
+          ? _currentGroup().members[m.senderId] ?? 'Someone'
           : 'You';
 
   // ─── Resend ─────────────────────────────────────────────
@@ -153,21 +189,24 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     await repo.deleteMessageLocal(message.id);
 
     final identity = context.read<IdentityStore>();
-    final members = Map<String, String>.from(widget.group.members)
+    final group = _currentGroup();
+    final members = Map<String, String>.from(group.members)
       ..[identity.userId] = identity.displayName;
     final packet = BlePacket.groupMsg(
       from: identity.userId,
       name: identity.displayName,
       text: text,
-      groupId: widget.group.id,
-      groupName: widget.group.name,
+      groupId: group.id,
+      groupName: group.name,
       members: members,
       replyToId: replyToId,
       replyToText: replyToText,
       replyToSender: replyToSender,
       forwarded: forwarded,
+      ownerId: group.ownerId,
+      permissions: group.permissions,
     );
-    await repo.saveOutgoingGroupMsg(group: widget.group, packet: packet);
+    await repo.saveOutgoingGroupMsg(group: group, packet: packet);
     final delivered = await _fanOut(packet);
     if (delivered == 0) {
       await repo.markFailed(packet.id);
@@ -379,6 +418,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         groupName: group.name,
         members: members,
         forwarded: true,
+        ownerId: group.ownerId,
+        permissions: group.permissions,
       );
       await repo.saveOutgoingGroupMsg(group: group, packet: packet);
       for (final memberId in group.members.keys) {
@@ -475,9 +516,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   @override
   Widget build(BuildContext context) {
     final repo = context.watch<ChatRepository>();
+    final identity = context.watch<IdentityStore>();
     final group =
         repo.groupById(widget.group.id) ?? widget.group;
     final memberCount = group.members.length + 1;
+    final restricted = _isRestricted(group, identity.userId);
 
     return Scaffold(
       body: Stack(
@@ -553,6 +596,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                           return MessageBubble(
                             message: m,
                             senderName: senderName,
+                            progress: repo.fileProgress[m.id],
                             onLongPressStart: (pos) =>
                                 _showActions(m, pos),
                             onTap: m.direction ==
@@ -571,10 +615,14 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                   ),
                 ),
                 if (_replyingTo != null) _replyPreviewBar(),
+                if (restricted) _restrictedNotice(),
                 GlassInputBar(
                   controller: _controller,
                   onSend: _send,
                   isSending: _sending,
+                  enabled: !restricted,
+                  onAttachImage: () => _pickAndSendFile(FileType.image),
+                  onAttachFile: () => _pickAndSendFile(FileType.any),
                 ),
               ],
             ),
@@ -582,6 +630,171 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
         ],
       ),
     );
+  }
+
+  /// Notice shown above the composer when owner-only messaging is
+  /// on and this phone is not the owner.
+  Widget _restrictedNotice() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: CcColors.abyss.withValues(alpha: 0.7),
+        border: Border(
+          top: BorderSide(
+            color: CcColors.glassBorder.withValues(alpha: 0.5),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.lock_outline_rounded,
+              color: CcColors.textMuted, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Only the owner can send messages in this group.',
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                color: CcColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── File sending ───────────────────────────────────────
+
+  /// Picks an image or a file and fans it out to every member.
+  /// Same path-only picker fix as the 1:1 chat (see ChatScreen):
+  /// no `withData` (binder risk), failures surface a snackbar.
+  Future<void> _pickAndSendFile(FileType type) async {
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform.pickFiles(
+        type: type,
+        allowMultiple: false,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open the file picker: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+    if (result == null || result.files.isEmpty) return;
+    final picked = result.files.single;
+
+    final path = picked.path;
+    if (path == null || path.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Could not read that file — try one stored on this phone.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+    Uint8List bytes;
+    try {
+      bytes = await File(path).readAsBytes();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not read that file.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+    await _sendFileBytes(
+      bytes: bytes,
+      fileName: picked.name,
+      mimeType: mimeForFileName(picked.name),
+      filePath: path,
+    );
+  }
+
+  /// Fans one file transfer out to every member. One outgoing file
+  /// message is stored in the group conversation; members who are out
+  /// of range simply miss the file (same as group text).
+  Future<void> _sendFileBytes({
+    required Uint8List bytes,
+    required String fileName,
+    required String mimeType,
+    required String filePath,
+  }) async {
+    if (bytes.length > FileTransferConfig.maxFileSize) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('File too big — 1 MB max over Bluetooth.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    final identity = context.read<IdentityStore>();
+    final ble = context.read<BleChatService>();
+    final repo = context.read<ChatRepository>();
+    final group = _currentGroup();
+    final transferId = const Uuid().v4();
+
+    await repo.saveOutgoingGroupFile(
+      group: group,
+      transferId: transferId,
+      fileName: fileName,
+      fileSize: bytes.length,
+      mimeType: mimeType,
+      filePath: filePath,
+      ts: DateTime.now().millisecondsSinceEpoch,
+    );
+    var delivered = 0;
+    for (final memberId in group.members.keys) {
+      try {
+        await FileTransferService.sendFile(
+          send: (packet) => ble.sendTo(memberId, packet),
+          from: identity.userId,
+          name: identity.displayName,
+          transferId: transferId,
+          fileName: fileName,
+          bytes: bytes,
+          mimeType: mimeType,
+          groupId: group.id,
+          onProgress: (p) => repo.updateFileProgress(transferId, p),
+        );
+        delivered++;
+      } catch (_) {
+        // This member missed the file; the others still get it.
+      }
+    }
+    if (delivered == 0) {
+      await repo.markFailed(transferId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('File not delivered — no members in range.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      await repo.markDelivered(transferId);
+    }
+    if (mounted) _scrollToBottom();
   }
 
   Widget _appBar(Group group, int memberCount) {
@@ -603,50 +816,81 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
             icon: const Icon(Icons.arrow_back_rounded,
                 color: CcColors.textPrimary),
           ),
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: CcColors.aquaGradient,
-            ),
-            child: Center(
-              child: Text(
-                group.name.isEmpty
-                    ? '?'
-                    : group.name[0].toUpperCase(),
-                style: GoogleFonts.nunito(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
+          Expanded(
+            child: GestureDetector(
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => GroupInfoScreen(group: group),
                 ),
+              ),
+              child: Row(
+                children: [
+                  _groupAvatar(group),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          group.name,
+                          style: GoogleFonts.nunito(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: CcColors.textPrimary,
+                          ),
+                        ),
+                        Text(
+                          '$memberCount members',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 12,
+                            color: CcColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  group.name,
-                  style: GoogleFonts.nunito(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    color: CcColors.textPrimary,
-                  ),
-                ),
-                Text(
-                  '$memberCount members',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 12,
-                    color: CcColors.textMuted,
-                  ),
-                ),
-              ],
-            ),
-          ),
         ],
+      ),
+    );
+  }
+
+  /// Group avatar: the group photo when one is set, otherwise the
+  /// initial. The photo is local-only (see GroupInfoScreen).
+  Widget _groupAvatar(Group group) {
+    final photoPath = group.photoPath;
+    if (photoPath != null && File(photoPath).existsSync()) {
+      return Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          image: DecorationImage(
+            image: FileImage(File(photoPath)),
+            fit: BoxFit.cover,
+          ),
+        ),
+      );
+    }
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: CcColors.aquaGradient,
+      ),
+      child: Center(
+        child: Text(
+          group.name.isEmpty ? '?' : group.name[0].toUpperCase(),
+          style: GoogleFonts.nunito(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+          ),
+        ),
       ),
     );
   }

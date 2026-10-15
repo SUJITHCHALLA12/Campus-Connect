@@ -14,6 +14,8 @@ import '../ble/ble_transport.dart';
 import '../ble/file_transfer.dart';
 import '../core/constants.dart';
 import '../core/identity.dart';
+import '../core/theme/chat_theme_store.dart';
+import '../core/theme/chat_themes.dart';
 import '../data/chat_repository.dart';
 import '../data/models.dart';
 import 'forward_screen.dart';
@@ -150,25 +152,68 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Picks an image or a file and sends it to the peer over BLE.
   /// Files are capped at 1 MB (see [FileTransferConfig]).
+  ///
+  /// Path-only picking: the old code passed `withData: true`, which
+  /// pushes up to 1 MB of bytes through the Android binder (a
+  /// TransactionTooLarge failure for larger picks) for bytes we then
+  /// re-read from the path anyway. The profile-photo picker uses the
+  /// same path-only pattern. Failures now surface a snackbar instead
+  /// of silently doing nothing — the old `if (bytes == null) return`
+  /// is why the button looked dead when a pick yielded no usable
+  /// bytes/path (e.g. cloud-provider files).
   Future<void> _pickAndSendFile(FileType type) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: type,
-      allowMultiple: false,
-      withData: true,
-    );
+    FilePickerResult? result;
+    try {
+      result = await FilePicker.platform.pickFiles(
+        type: type,
+        allowMultiple: false,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open the file picker: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
     if (result == null || result.files.isEmpty) return;
     final picked = result.files.single;
 
-    Uint8List? bytes = picked.bytes;
-    bytes ??= picked.path != null
-        ? await File(picked.path!).readAsBytes()
-        : null;
-    if (bytes == null) return;
+    final path = picked.path;
+    if (path == null || path.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+                'Could not read that file — try one stored on this phone.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+      return;
+    }
+    Uint8List bytes;
+    try {
+      bytes = await File(path).readAsBytes();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not read that file.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
     await _sendFileBytes(
       bytes: bytes,
       fileName: picked.name,
       mimeType: mimeForFileName(picked.name),
-      filePath: picked.path ?? '',
+      filePath: path,
       kind: MessageKind.file,
     );
   }
@@ -517,6 +562,8 @@ class _ChatScreenState extends State<ChatScreen> {
           groupName: group.name,
           members: members,
           forwarded: true,
+          ownerId: group.ownerId,
+          permissions: group.permissions,
         );
         await repo.saveOutgoingGroupMsg(group: group, packet: packet);
         for (final memberId in group.members.keys) {
@@ -616,16 +663,21 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final repo = context.watch<ChatRepository>();
     final ble = context.watch<BleChatService>();
+    final theme = context
+        .watch<ChatThemeStore>()
+        .themeFor(widget.peerUserId);
     final connected = ble.linkForUser(widget.peerUserId) != null;
 
     return Scaffold(
       body: Stack(
         children: [
           const AuroraBackground(),
+          // Per-chat theme: a tint wash over the shared background.
+          Container(color: theme.backgroundTint),
           SafeArea(
             child: Column(
               children: [
-                _appBar(connected),
+                _appBar(connected, theme),
                 Expanded(
                   child: FutureBuilder<List<ChatMessage>>(
                     future:
@@ -702,6 +754,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           return MessageBubble(
                             message: m,
                             progress: repo.fileProgress[m.id],
+                            outgoingGradient: theme.bubbleGradient,
+                            outgoingBorderColor: theme.accent,
                             onLongPressStart: (pos) =>
                                 _showActions(m, pos),
                             onTap: m.direction ==
@@ -816,7 +870,105 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Widget _appBar(bool connected) {
+  /// Per-chat theme picker: swatches for the six themes. The choice
+  /// is stored per peer and changes only this chat's background tint
+  /// and own-bubble gradient.
+  void _showThemePicker(ChatTheme current) {
+    final store = context.read<ChatThemeStore>();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: CcColors.deepSea,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Chat theme',
+                style: GoogleFonts.nunito(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: CcColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Only this chat changes.',
+                style: GoogleFonts.dmSans(
+                  fontSize: 13,
+                  color: CcColors.textMuted,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                spacing: 14,
+                runSpacing: 14,
+                children: chatThemes.map((t) {
+                  final selected = t.id == current.id;
+                  return GestureDetector(
+                    onTap: () async {
+                      await store.setTheme(widget.peerUserId, t.id);
+                      if (sheetContext.mounted) {
+                        Navigator.of(sheetContext).pop();
+                      }
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: t.bubbleGradient,
+                            border: Border.all(
+                              color: selected
+                                  ? Colors.white
+                                  : Colors.white.withValues(alpha: 0.2),
+                              width: selected ? 2.5 : 1,
+                            ),
+                          ),
+                          child: selected
+                              ? const Icon(Icons.check_rounded,
+                                  color: Colors.white)
+                              : null,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          t.name,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 12,
+                            color: selected
+                                ? CcColors.textPrimary
+                                : CcColors.textMuted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _appBar(bool connected, ChatTheme theme) {
     return Container(
       padding: const EdgeInsets.fromLTRB(4, 8, 12, 8),
       decoration: BoxDecoration(
@@ -896,6 +1048,12 @@ class _ChatScreenState extends State<ChatScreen> {
                 color: CcColors.onlineGreen,
               ),
             ),
+          IconButton(
+            onPressed: () => _showThemePicker(theme),
+            icon: const Icon(Icons.palette_outlined,
+                color: CcColors.textPrimary),
+            tooltip: 'Chat theme',
+          ),
         ],
       ),
     );

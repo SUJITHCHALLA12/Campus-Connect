@@ -687,7 +687,8 @@ class _SectionTitle extends StatelessWidget {
 }
 
 /// One row in the Chats / Groups lists: coloured avatar, name,
-/// last-message snippet, time, unread badge.
+/// last-message snippet, time, unread badge. [imagePath] shows a photo
+/// (group photo) instead of the initial avatar when set.
 class _ConversationTile extends StatelessWidget {
   final String title;
   final String? subtitle;
@@ -695,6 +696,7 @@ class _ConversationTile extends StatelessWidget {
   final int unread;
   final bool online;
   final VoidCallback onTap;
+  final String? imagePath;
 
   const _ConversationTile({
     required this.title,
@@ -703,6 +705,7 @@ class _ConversationTile extends StatelessWidget {
     required this.unread,
     required this.online,
     required this.onTap,
+    this.imagePath,
   });
 
   @override
@@ -717,7 +720,7 @@ class _ConversationTile extends StatelessWidget {
           children: [
             Stack(
               children: [
-                _Avatar(name: title),
+                _tileAvatar(),
                 if (online)
                   Positioned(
                     right: 0,
@@ -796,6 +799,26 @@ class _ConversationTile extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  /// List avatar: the photo when one is set (group photo),
+  /// otherwise the initials avatar.
+  Widget _tileAvatar() {
+    final path = imagePath;
+    if (path != null && File(path).existsSync()) {
+      return Container(
+        width: 52,
+        height: 52,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          image: DecorationImage(
+            image: FileImage(File(path)),
+            fit: BoxFit.cover,
+          ),
+        ),
+      );
+    }
+    return _Avatar(name: title);
   }
 }
 
@@ -1192,6 +1215,7 @@ class _GroupsList extends StatelessWidget {
                 lastTs: g.lastTs,
                 unread: g.unread,
                 online: false,
+                imagePath: g.photoPath,
                 onTap: () => Navigator.of(context).push(
                   MaterialPageRoute(
                     builder: (_) => GroupChatScreen(group: g),
@@ -1383,7 +1407,7 @@ class _ProfilePage extends StatelessWidget {
         const SizedBox(height: 24),
         Center(
           child: Text(
-            'Campus Connect v0.8 · BLE-first · plaintext v1',
+            'Campus Connect v0.9 · BLE-first · plaintext v1',
             style: GoogleFonts.dmSans(
               fontSize: 11,
               color: CcColors.textMuted,
