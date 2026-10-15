@@ -3,14 +3,28 @@
     <!-- BLE pre-Android-12 (legacy) -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
-    <!-- BLE scanning on API <= 30 still needs location -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <!-- BLE scanning on API <= 30 still needs location; Nearby /
+         Wi-Fi Direct discovery needs it on API 29-31 too, hence
+         maxSdk 31 (was 30 for BLE alone). -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="31" />
 
     <!-- BLE Android 12+ -->
     <!-- neverForLocation: we only scan for our own service UUID, no location needed -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Fast file transfer: Nearby Connections + Wi-Fi Direct.
+         NEARBY_WIFI_DEVICES covers Nearby / Wi-Fi Direct discovery on
+         API 33+; below that, the legacy Wi-Fi + location permissions
+         apply (maxSdkVersion bounds mirror the Nearby Connections
+         plugin's README). ACCESS_FINE_LOCATION is maxSdk 31 here
+         (was 30 for BLE alone) because Nearby / Wi-Fi Direct
+         discovery needs it on API 29-31. -->
+    <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:minSdkVersion="32" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" android:maxSdkVersion="31" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" android:maxSdkVersion="31" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
     <!-- Voice messages: in-app mic recording -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
