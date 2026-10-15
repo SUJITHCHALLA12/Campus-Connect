@@ -1,1 +1,1 @@
-{"build": 6, "notes": "WhatsApp-style anchored message menu, group creation errors now visible, profile photo setting.", "version": "0.8.0"}
+{"build":7,"notes":"Per-chat themes, group photo, group owner + group permissions, group file sharing fixed.","version":"0.9.0"}

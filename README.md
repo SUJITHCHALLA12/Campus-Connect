@@ -3,7 +3,7 @@
 Nearby-first campus messaging over **Bluetooth Low Energy**. No internet, no
 servers, no accounts — open the app near another phone running it and chat.
 
-> **Status:** v0.8 (Android). Messages are currently **plaintext**
+> **Status:** v0.9 (Android). Messages are currently **plaintext**
 > over the air; per-conversation encryption is a planned milestone, not a
 > claim. See `docs/ARCHITECTURE.md`.
 
@@ -98,9 +98,20 @@ docs/        PROTOCOL.md, ARCHITECTURE.md
    of silently doing nothing, and the empty member list offers
    "Pair with nearby"; Profile tab gains a profile photo setting
    (local-only for now — peers still see the initials avatar).
-10. **M2** — Privacy: ECDH + AES-GCM per conversation
-11. **M4** — Internet relay for distant users (Supabase project on standby)
-12. **M5** — iOS support
+10. **M1.13 / v0.9** — Per-chat themes, group owner, group files ✅:
+    each 1:1 chat gets its own theme (6 themes: Ocean, Sunset,
+    Forest, Grape, Rose, Mono — background tint + own-bubble
+    gradient, stored per peer, app theme untouched); groups gain
+    a photo (local-only, like the profile photo), an owner (the
+    creator), a Group Info screen, and Group Permissions —
+    Send messages / Edit group info / Add members, each Everyone
+    or Only owner, enforced on every member's phone; the file
+    button now works in group chats too (files fan out to members
+    and land in the group conversation), and the 1:1 picker no
+    longer silently drops picks that yield no bytes.
+11. **M2** — Privacy: ECDH + AES-GCM per conversation
+12. **M4** — Internet relay for distant users (Supabase project on standby)
+13. **M5** — iOS support
 
 The app theme follows the logo: cyan → violet gradients on a deep-navy
 background, with the logo on the splash and welcome screens.
