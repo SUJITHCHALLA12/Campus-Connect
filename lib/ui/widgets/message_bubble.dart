@@ -15,7 +15,12 @@ import '../../data/models.dart';
 /// File messages render a tappable file tile (name, size, open with the
 /// platform viewer) plus a send-progress bar while uploading. Voice
 /// messages render a play button + progress bar.
-class MessageBubble extends StatelessWidget {
+///
+/// Interactions: long-press opens the message actions sheet, and a
+/// horizontal swipe starts a reply (slide to reply). Replies show a
+/// quote block, forwarded messages a "Forwarded" label, edited
+/// messages an "Edited" tag, and reactions as emoji pills below.
+class MessageBubble extends StatefulWidget {
   final ChatMessage message;
 
   /// Live send progress for outgoing file messages (0.0–1.0), null when
@@ -26,94 +31,280 @@ class MessageBubble extends StatelessWidget {
   /// chats. Null in 1:1 chats.
   final String? senderName;
 
+  /// Long-press → actions sheet (reply / react / edit / copy /
+  /// forward / info / delete).
+  final VoidCallback? onLongPress;
+
+  /// Slide-to-reply gesture completed.
+  final VoidCallback? onSwipeReply;
+
+  /// Tapping the reactions row → reaction picker.
+  final VoidCallback? onReactionTap;
+
   const MessageBubble({
     super.key,
     required this.message,
     this.progress,
     this.senderName,
+    this.onLongPress,
+    this.onSwipeReply,
+    this.onReactionTap,
   });
 
   @override
+  State<MessageBubble> createState() => _MessageBubbleState();
+}
+
+class _MessageBubbleState extends State<MessageBubble> {
+  double _dragDx = 0;
+
+  @override
   Widget build(BuildContext context) {
+    final message = widget.message;
     final outgoing = message.direction == MessageDirection.outgoing;
+    final dragOpacity = (_dragDx.abs() / 50).clamp(0.0, 1.0);
     return Align(
       alignment: outgoing ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 3),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.75,
-        ),
-        decoration:
-            outgoing ? CcGlass.bubbleOutgoing() : CcGlass.bubbleIncoming(),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (senderName != null &&
-                message.direction == MessageDirection.incoming)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Text(
-                    senderName!,
-                    style: GoogleFonts.nunito(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: CcColors.aquaCore,
+      child: GestureDetector(
+        onLongPress: widget.onLongPress,
+        onHorizontalDragUpdate: (details) {
+          setState(() {
+            _dragDx = (_dragDx + details.delta.dx).clamp(-90.0, 90.0);
+          });
+        },
+        onHorizontalDragEnd: (_) {
+          final triggered = _dragDx.abs() > 50;
+          setState(() => _dragDx = 0);
+          if (triggered) widget.onSwipeReply?.call();
+        },
+        onHorizontalDragCancel: () => setState(() => _dragDx = 0),
+        child: Transform.translate(
+          offset: Offset(_dragDx, 0),
+          child: Column(
+            crossAxisAlignment: outgoing
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.symmetric(vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    constraints: BoxConstraints(
+                      maxWidth:
+                          MediaQuery.of(context).size.width * 0.75,
+                    ),
+                    decoration: outgoing
+                        ? CcGlass.bubbleOutgoing()
+                        : CcGlass.bubbleIncoming(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.senderName != null &&
+                            message.direction ==
+                                MessageDirection.incoming)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                widget.senderName!,
+                                style: GoogleFonts.nunito(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: CcColors.aquaCore,
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (message.forwarded)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.only(bottom: 2),
+                              child: Text(
+                                'Forwarded',
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 12,
+                                  fontStyle: FontStyle.italic,
+                                  color: CcColors.textPrimary
+                                      .withValues(alpha: 0.6),
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (message.replyToText != null)
+                          _quoteBlock(message),
+                        if (message.kind == MessageKind.voice)
+                          _VoiceBubble(message: message)
+                        else if (message.kind == MessageKind.file)
+                          _fileContent(outgoing)
+                        else
+                          Text(
+                            message.text,
+                            style: GoogleFonts.dmSans(
+                              color: CcColors.textPrimary,
+                              fontSize: 15,
+                            ),
+                          ),
+                        const SizedBox(height: 4),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (message.edited)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(right: 4),
+                                child: Text(
+                                  'Edited',
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 10,
+                                    fontStyle: FontStyle.italic,
+                                    color: CcColors.textPrimary
+                                        .withValues(alpha: 0.6),
+                                  ),
+                                ),
+                              ),
+                            Text(
+                              _formatTime(message.ts),
+                              style: GoogleFonts.dmSans(
+                                fontSize: 10,
+                                color: CcColors.textPrimary
+                                    .withValues(alpha: 0.65),
+                              ),
+                            ),
+                            if (outgoing) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                message.status ==
+                                        MessageStatus.delivered
+                                    ? Icons.done_all
+                                    : message.status ==
+                                            MessageStatus.failed
+                                        ? Icons.error_outline
+                                        : Icons.done,
+                                size: 14,
+                                color: message.status ==
+                                        MessageStatus.failed
+                                    ? CcColors.errorRed
+                                    : message.status ==
+                                            MessageStatus.delivered
+                                        ? CcColors.aquaCyan
+                                        : CcColors.textPrimary
+                                            .withValues(alpha: 0.65),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ),
-            if (message.kind == MessageKind.voice)
-              _VoiceBubble(message: message)
-            else if (message.kind == MessageKind.file)
-              _fileContent(outgoing)
-            else
-              Text(
-                message.text,
-                style: GoogleFonts.dmSans(
-                  color: CcColors.textPrimary,
-                  fontSize: 15,
-                ),
-              ),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _formatTime(message.ts),
-                  style: GoogleFonts.dmSans(
-                    fontSize: 10,
-                    color: CcColors.textPrimary.withValues(alpha: 0.65),
-                  ),
-                ),
-                if (outgoing) ...[
-                  const SizedBox(width: 4),
-                  Icon(
-                    message.status == MessageStatus.delivered
-                        ? Icons.done_all
-                        : message.status == MessageStatus.failed
-                            ? Icons.error_outline
-                            : Icons.done,
-                    size: 14,
-                    color: message.status == MessageStatus.failed
-                        ? CcColors.errorRed
-                        : message.status == MessageStatus.delivered
-                            ? CcColors.aquaCyan
-                            : CcColors.textPrimary.withValues(alpha: 0.65),
-                  ),
+                  if (dragOpacity > 0)
+                    Positioned(
+                      top: 14,
+                      left: outgoing ? -30 : null,
+                      right: outgoing ? null : -30,
+                      child: Opacity(
+                        opacity: dragOpacity,
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: CcColors.aquaCore,
+                          ),
+                          child: const Icon(Icons.reply_rounded,
+                              color: Colors.white, size: 14),
+                        ),
+                      ),
+                    ),
                 ],
-              ],
+              ),
+              if (message.reactions.isNotEmpty)
+                _reactionsRow(message),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _quoteBlock(ChatMessage message) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: const Border(
+          left: BorderSide(color: CcColors.aquaCore, width: 3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            message.replyToSender ?? 'Someone',
+            style: GoogleFonts.nunito(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: CcColors.aquaCore,
             ),
-          ],
+          ),
+          const SizedBox(height: 1),
+          Text(
+            message.replyToText ?? '',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.dmSans(
+              fontSize: 13,
+              color: CcColors.textPrimary.withValues(alpha: 0.8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reactionsRow(ChatMessage message) {
+    final counts = <String, int>{};
+    for (final emoji in message.reactions.values) {
+      counts[emoji] = (counts[emoji] ?? 0) + 1;
+    }
+    return GestureDetector(
+      onTap: widget.onReactionTap,
+      child: Container(
+        margin: const EdgeInsets.only(top: 1, bottom: 3),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: CcColors.deepSea,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: CcColors.glassBorder.withValues(alpha: 0.5),
+          ),
+        ),
+        child: Text(
+          counts.entries.map((e) => '${e.key} ${e.value}').join('  '),
+          style: GoogleFonts.dmSans(
+            fontSize: 12,
+            color: CcColors.textPrimary,
+          ),
         ),
       ),
     );
   }
 
   Widget _fileContent(bool outgoing) {
+    final message = widget.message;
+    final progress = widget.progress;
     final isSending =
         outgoing && message.status == MessageStatus.sending;
     final icon = _iconForMime(message.mimeType);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
@@ -8,6 +9,8 @@ import '../core/constants.dart';
 import '../core/identity.dart';
 import '../data/chat_repository.dart';
 import '../data/models.dart';
+import 'forward_screen.dart';
+import 'message_actions.dart';
 import 'widgets/aurora_background.dart';
 import 'widgets/glass_input_bar.dart';
 import 'widgets/message_bubble.dart';
@@ -28,6 +31,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   final _controller = TextEditingController();
   final _scroll = ScrollController();
   bool _sending = false;
+  ChatMessage? _replyingTo;
 
   @override
   void initState() {
@@ -50,6 +54,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     if (text.isEmpty || _sending) return;
     setState(() => _sending = true);
     _controller.clear();
+    final replyingTo = _replyingTo;
+    setState(() => _replyingTo = null);
 
     final identity = context.read<IdentityStore>();
     final ble = context.read<BleChatService>();
@@ -66,6 +72,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       groupId: widget.group.id,
       groupName: widget.group.name,
       members: members,
+      replyToId: replyingTo?.id,
+      replyToText:
+          replyingTo == null ? null : _quoteText(replyingTo),
+      replyToSender:
+          replyingTo == null ? null : _senderNameOf(replyingTo),
     );
     await repo.saveOutgoingGroupMsg(group: widget.group, packet: packet);
 
@@ -98,6 +109,318 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       _scroll.position.maxScrollExtent,
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOut,
+    );
+  }
+
+  /// Sends one packet to every member over their 1:1 link.
+  Future<int> _fanOut(BlePacket packet) async {
+    final ble = context.read<BleChatService>();
+    var delivered = 0;
+    for (final memberId in widget.group.members.keys) {
+      if (await ble.sendTo(memberId, packet)) delivered++;
+    }
+    return delivered;
+  }
+
+  String _quoteText(ChatMessage m) {
+    switch (m.kind) {
+      case MessageKind.voice:
+        return '🎤 Voice message';
+      case MessageKind.file:
+        return m.fileName ?? m.text;
+      case MessageKind.text:
+        return m.text;
+    }
+  }
+
+  String _senderNameOf(ChatMessage m) =>
+      m.direction == MessageDirection.incoming
+          ? widget.group.members[m.senderId] ?? 'Someone'
+          : 'You';
+
+  // ─── Message actions ──────────────────────────────────────
+
+  void _showActions(ChatMessage message) {
+    final isOwn = message.direction == MessageDirection.outgoing;
+    final canEdit = isOwn &&
+        message.kind == MessageKind.text &&
+        message.status != MessageStatus.failed &&
+        DateTime.now().millisecondsSinceEpoch - message.ts <
+            5 * 60 * 1000;
+    showMessageActionsSheet(
+      context,
+      message: message,
+      isOwn: isOwn,
+      canEdit: canEdit,
+      callbacks: MessageActionCallbacks(
+        onReply: () => setState(() => _replyingTo = message),
+        onReact: (emoji) => _react(message, emoji),
+        onEdit: canEdit ? () => _editMessage(message) : null,
+        onCopy: message.kind == MessageKind.text
+            ? () async {
+                await Clipboard.setData(
+                    ClipboardData(text: message.text));
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Copied'),
+                      duration: Duration(seconds: 1),
+                    ),
+                  );
+                }
+              }
+            : null,
+        onForward: () => _forwardMessage(message),
+        onInfo: () => _showInfo(message),
+        onDeleteForMe: () =>
+            context.read<ChatRepository>().deleteMessageLocal(message.id),
+        onDeleteForEveryone: isOwn
+            ? () async {
+                final identity = context.read<IdentityStore>();
+                final packet = BlePacket.deleteMsg(
+                  from: identity.userId,
+                  name: identity.displayName,
+                  deleteId: message.id,
+                  groupId: widget.group.id,
+                );
+                await _fanOut(packet);
+                await context
+                    .read<ChatRepository>()
+                    .deleteMessageLocal(message.id);
+              }
+            : null,
+      ),
+    );
+  }
+
+  Future<void> _react(ChatMessage message, String emoji) async {
+    final identity = context.read<IdentityStore>();
+    final repo = context.read<ChatRepository>();
+    await repo.toggleReaction(message.id, identity.userId, emoji);
+    final packet = BlePacket.react(
+      from: identity.userId,
+      name: identity.displayName,
+      reactId: message.id,
+      emoji: emoji,
+      groupId: widget.group.id,
+    );
+    await _fanOut(packet);
+  }
+
+  Future<void> _editMessage(ChatMessage message) async {
+    final controller = TextEditingController(text: message.text);
+    final newText = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: CcColors.deepSea,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        title: Text('Edit message',
+            style: GoogleFonts.nunito(
+                fontWeight: FontWeight.w700,
+                color: CcColors.textPrimary)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLines: 4,
+          style: GoogleFonts.dmSans(color: CcColors.textPrimary),
+          decoration: const InputDecoration(hintText: 'Message'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.of(context).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (newText == null || newText.isEmpty || newText == message.text) {
+      return;
+    }
+    final identity = context.read<IdentityStore>();
+    final repo = context.read<ChatRepository>();
+    await repo.updateMessageText(message.id, newText);
+    final packet = BlePacket.edit(
+      from: identity.userId,
+      name: identity.displayName,
+      editId: message.id,
+      text: newText,
+      groupId: widget.group.id,
+    );
+    await _fanOut(packet);
+  }
+
+  void _showInfo(ChatMessage message) {
+    final sent = DateTime.fromMillisecondsSinceEpoch(message.ts);
+    final sentLabel =
+        '${sent.hour % 12 == 0 ? 12 : sent.hour % 12}:${sent.minute.toString().padLeft(2, '0')} ${sent.hour < 12 ? 'AM' : 'PM'}';
+    final statusLabel = switch (message.status) {
+      MessageStatus.delivered => 'Delivered',
+      MessageStatus.failed => 'Failed',
+      MessageStatus.sending => 'Sending…',
+      MessageStatus.sent => 'Sent',
+    };
+    final typeLabel = switch (message.kind) {
+      MessageKind.text => 'Text',
+      MessageKind.file => 'File',
+      MessageKind.voice => 'Voice',
+    };
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: CcColors.deepSea,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        title: Text('Message info',
+            style: GoogleFonts.nunito(
+                fontWeight: FontWeight.w700,
+                color: CcColors.textPrimary)),
+        content: Text(
+          'Type: $typeLabel\nSent: $sentLabel\nStatus: $statusLabel\n'
+          '${message.edited ? 'Edited: yes' : ''}',
+          style: GoogleFonts.dmSans(
+              color: CcColors.textSecondary, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _forwardMessage(ChatMessage message) async {
+    final target = await Navigator.of(context).push<ForwardTarget>(
+      MaterialPageRoute(builder: (_) => const ForwardScreen()),
+    );
+    if (target == null || !mounted) return;
+    if (message.kind != MessageKind.text) {
+      // Files/voice forward to 1:1 chats only (group file transfer
+      // is not built yet) — and this screen has no file sender.
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Forwarding files from groups isn\'t supported yet.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    final identity = context.read<IdentityStore>();
+    final ble = context.read<BleChatService>();
+    final repo = context.read<ChatRepository>();
+    if (target.group != null) {
+      final group = target.group!;
+      final members = Map<String, String>.from(group.members)
+        ..[identity.userId] = identity.displayName;
+      final packet = BlePacket.groupMsg(
+        from: identity.userId,
+        name: identity.displayName,
+        text: message.text,
+        groupId: group.id,
+        groupName: group.name,
+        members: members,
+        forwarded: true,
+      );
+      await repo.saveOutgoingGroupMsg(group: group, packet: packet);
+      for (final memberId in group.members.keys) {
+        await ble.sendTo(memberId, packet);
+      }
+      await repo.markDelivered(packet.id);
+    } else {
+      final packet = BlePacket.msg(
+        from: identity.userId,
+        name: identity.displayName,
+        text: message.text,
+        forwarded: true,
+      );
+      await repo.saveOutgoing(
+        peerUserId: target.peerUserId!,
+        peerName: target.peerName ?? 'Chat',
+        packet: packet,
+      );
+      await ble.sendTo(target.peerUserId!, packet);
+    }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Forwarded to ${target.displayName}'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  Widget _replyPreviewBar() {
+    final replyingTo = _replyingTo;
+    if (replyingTo == null) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: CcColors.abyss.withValues(alpha: 0.7),
+        border: Border(
+          top: BorderSide(
+            color: CcColors.glassBorder.withValues(alpha: 0.5),
+            width: 1,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 3,
+            height: 34,
+            decoration: BoxDecoration(
+              color: CcColors.aquaCore,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Replying to ${_senderNameOf(replyingTo)}',
+                  style: GoogleFonts.nunito(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: CcColors.aquaCore,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  _quoteText(replyingTo),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 13,
+                    color: CcColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: () => setState(() => _replyingTo = null),
+            icon: const Icon(
+              Icons.close_rounded,
+              color: CcColors.textMuted,
+              size: 20,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -182,12 +505,17 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                           return MessageBubble(
                             message: m,
                             senderName: senderName,
+                            onLongPress: () => _showActions(m),
+                            onSwipeReply: () =>
+                                setState(() => _replyingTo = m),
+                            onReactionTap: () => _showActions(m),
                           );
                         },
                       );
                     },
                   ),
                 ),
+                if (_replyingTo != null) _replyPreviewBar(),
                 GlassInputBar(
                   controller: _controller,
                   onSend: _send,
