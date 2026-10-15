@@ -3,7 +3,7 @@
 Nearby-first campus messaging over **Bluetooth Low Energy**. No internet, no
 servers, no accounts — open the app near another phone running it and chat.
 
-> **Status:** v0.9 (Android). Messages are currently **plaintext**
+> **Status:** v0.10 (Android). Messages are currently **plaintext**
 > over the air; per-conversation encryption is a planned milestone, not a
 > claim. See `docs/ARCHITECTURE.md`.
 
@@ -109,9 +109,15 @@ docs/        PROTOCOL.md, ARCHITECTURE.md
     button now works in group chats too (files fan out to members
     and land in the group conversation), and the 1:1 picker no
     longer silently drops picks that yield no bytes.
-11. **M2** — Privacy: ECDH + AES-GCM per conversation
-12. **M4** — Internet relay for distant users (Supabase project on standby)
-13. **M5** — iOS support
+11. **M1.14 / v0.10** — Fast file transfer ✅: files now go over
+    Nearby Connections first (the Quick Share transport — BLE
+    discovery, then a high-throughput Wi-Fi socket), raw Wi-Fi
+    Direct second, BLE last. Fast paths allow up to 100 MB
+    (BLE fallback keeps the 1 MB cap); chat and signalling stay
+    on BLE. Group files fan out per member over the same paths.
+12. **M2** — Privacy: ECDH + AES-GCM per conversation
+13. **M4** — Internet relay for distant users (Supabase project on standby)
+14. **M5** — iOS support
 
 The app theme follows the logo: cyan → violet gradients on a deep-navy
 background, with the logo on the splash and welcome screens.

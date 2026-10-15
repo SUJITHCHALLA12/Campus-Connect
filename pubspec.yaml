@@ -1,7 +1,7 @@
 name: campus_connect
 description: Campus Connect — nearby-first campus messaging over Bluetooth Low Energy.
 publish_to: 'none'
-version: 0.9.0+7
+version: 0.10.0+8
 
 environment:
   sdk: ^3.6.0
@@ -32,6 +32,11 @@ dependencies:
   file_picker: ^8.0.0
   path_provider: ^2.1.0
   open_filex: ^4.0.0
+
+  # Fast file transfer: Nearby Connections (Quick Share transport).
+  # Raw Wi-Fi Direct fallback is hand-written Kotlin (see
+  # WifiDirectHelper.kt) — no plugin. BLE stays the last resort.
+  nearby_connections: ^4.3.0
 
   # Voice messages: record, play back, emoji picker.
   # record ^6: the 5.x line is broken against the current

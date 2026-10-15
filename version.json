@@ -1,1 +1,1 @@
-{"build":7,"notes":"Per-chat themes, group photo, group owner + group permissions, group file sharing fixed.","version":"0.9.0"}
+{"build":8,"notes":"Fast file transfer: Nearby Connections first, raw Wi-Fi Direct fallback, BLE last resort. 100 MB cap on fast paths.","version":"0.10.0"}
