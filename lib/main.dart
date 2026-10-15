@@ -7,6 +7,7 @@ import 'core/bootstrap.dart';
 import 'core/identity.dart';
 import 'core/theme/chat_theme_store.dart';
 import 'data/chat_repository.dart';
+import 'transfer/fast_file_transfer.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,6 +19,14 @@ Future<void> main() async {
   final repository = ChatRepository();
   final ble = BleChatService(identity);
   final chatThemes = ChatThemeStore();
+  // Fast file transfer (Nearby → Wi-Fi Direct → BLE). Created here
+  // so the chat screens can read it; started from the home screen
+  // once the identity exists (see HomeScreen._startBle).
+  final fastTransfer = FastFileTransferService(
+    identity: identity,
+    repository: repository,
+    ble: ble,
+  );
   final bootstrap = AppBootstrap(
     identity: identity,
     repository: repository,
@@ -33,6 +42,8 @@ Future<void> main() async {
         ChangeNotifierProvider.value(value: ble),
         ChangeNotifierProvider.value(value: bootstrap),
         ChangeNotifierProvider.value(value: chatThemes),
+        // Plain provider: the service holds no UI state of its own.
+        Provider.value(value: fastTransfer),
       ],
       child: const CampusConnectApp(),
     ),
