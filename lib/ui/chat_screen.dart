@@ -119,6 +119,36 @@ class _ChatScreenState extends State<ChatScreen> {
         ? await File(picked.path!).readAsBytes()
         : null;
     if (bytes == null) return;
+    await _sendFileBytes(
+      bytes: bytes,
+      fileName: picked.name,
+      mimeType: mimeForFileName(picked.name),
+      filePath: picked.path ?? '',
+      kind: MessageKind.file,
+    );
+  }
+
+  /// Sends a recorded voice note to the peer over BLE, as a voice
+  /// message (same file transfer, audio mime type).
+  Future<void> _sendVoice(File file) async {
+    final bytes = await file.readAsBytes();
+    await _sendFileBytes(
+      bytes: bytes,
+      fileName: 'voice.m4a',
+      mimeType: 'audio/m4a',
+      filePath: file.path,
+      kind: MessageKind.voice,
+    );
+  }
+
+  /// Shared send path for picked files and voice notes.
+  Future<void> _sendFileBytes({
+    required Uint8List bytes,
+    required String fileName,
+    required String mimeType,
+    required String filePath,
+    required MessageKind kind,
+  }) async {
     if (bytes.length > FileTransferConfig.maxFileSize) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -135,8 +165,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final ble = context.read<BleChatService>();
     final repo = context.read<ChatRepository>();
     final transferId = const Uuid().v4();
-    final fileName = picked.name;
-    final mimeType = mimeForFileName(fileName);
 
     await repo.saveOutgoingFile(
       peerUserId: widget.peerUserId,
@@ -145,8 +173,9 @@ class _ChatScreenState extends State<ChatScreen> {
       fileName: fileName,
       fileSize: bytes.length,
       mimeType: mimeType,
-      filePath: picked.path ?? '',
+      filePath: filePath,
       ts: DateTime.now().millisecondsSinceEpoch,
+      kind: kind,
     );
     try {
       await FileTransferService.sendFile(
@@ -274,6 +303,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   isSending: _sending,
                   onAttachImage: () => _pickAndSendFile(FileType.image),
                   onAttachFile: () => _pickAndSendFile(FileType.any),
+                  onVoiceMessage: (file) => _sendVoice(file),
                 ),
               ],
             ),

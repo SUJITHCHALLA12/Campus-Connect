@@ -324,6 +324,7 @@ class ChatRepository extends ChangeNotifier {
     required String mimeType,
     required String filePath,
     required int ts,
+    MessageKind kind = MessageKind.file,
   }) async {
     final message = ChatMessage(
       id: transferId,
@@ -333,7 +334,7 @@ class ChatRepository extends ChangeNotifier {
       ts: ts,
       direction: MessageDirection.outgoing,
       status: MessageStatus.sending,
-      kind: MessageKind.file,
+      kind: kind,
       fileName: fileName,
       fileSize: fileSize,
       mimeType: mimeType,
@@ -343,7 +344,9 @@ class ChatRepository extends ChangeNotifier {
     await _upsertConversation(
       peerUserId: peerUserId,
       peerName: peerName,
-      lastMessage: '📎 $fileName',
+      lastMessage: kind == MessageKind.voice
+          ? '🎤 Voice message'
+          : '📎 $fileName',
       ts: message.ts,
       unreadDelta: 0,
     );
@@ -352,6 +355,11 @@ class ChatRepository extends ChangeNotifier {
   /// Stores a received file (the transport already saved the bytes and
   /// hands us the local path in the synthetic `file` packet).
   Future<void> saveIncomingFile(BlePacket packet) async {
+    // Voice notes travel as file transfers with an audio mime type —
+    // they get the voice kind so the UI shows a player bubble.
+    final kind = (packet.mimeType ?? '').startsWith('audio/')
+        ? MessageKind.voice
+        : MessageKind.file;
     final message = ChatMessage(
       id: packet.id,
       conversationId: packet.from,
@@ -360,7 +368,7 @@ class ChatRepository extends ChangeNotifier {
       ts: packet.ts,
       direction: MessageDirection.incoming,
       status: MessageStatus.delivered,
-      kind: MessageKind.file,
+      kind: kind,
       fileName: packet.fileName,
       fileSize: packet.fileSize,
       mimeType: packet.mimeType,
@@ -370,7 +378,9 @@ class ChatRepository extends ChangeNotifier {
     await _upsertConversation(
       peerUserId: packet.from,
       peerName: packet.name.isEmpty ? 'Campus user' : packet.name,
-      lastMessage: '📎 ${message.text}',
+      lastMessage: kind == MessageKind.voice
+          ? '🎤 Voice message'
+          : '📎 ${message.text}',
       ts: message.ts,
       unreadDelta: openConversationId == packet.from ? 0 : 1,
     );

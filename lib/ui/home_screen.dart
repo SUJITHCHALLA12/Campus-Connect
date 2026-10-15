@@ -1167,7 +1167,7 @@ class _ProfilePage extends StatelessWidget {
         const SizedBox(height: 24),
         Center(
           child: Text(
-            'Campus Connect v0.4 · BLE-first · plaintext v1',
+            'Campus Connect v0.5 · BLE-first · plaintext v1',
             style: GoogleFonts.dmSans(
               fontSize: 11,
               color: CcColors.textMuted,
@@ -1287,7 +1287,7 @@ class _ProfilePage extends StatelessWidget {
         content: Text(
           'Nearby-first campus messaging over Bluetooth Low Energy. '
           'Chat with phones around you — no internet, no servers, no accounts.\n\n'
-          'v0.4 messages are plaintext over the air; per-conversation '
+          'v0.5 messages are plaintext over the air; per-conversation '
           'encryption is on the roadmap.',
           style: GoogleFonts.dmSans(
               color: CcColors.textSecondary, fontSize: 14),

@@ -13,7 +13,7 @@ enum MessageStatus {
 /// Text messages carry [text]; file messages carry the file metadata and
 /// the local [filePath] (sender side: the picked file; receiver side:
 /// the saved copy under the app documents folder).
-enum MessageKind { text, file }
+enum MessageKind { text, file, voice }
 
 class ChatMessage {
   final String id;
