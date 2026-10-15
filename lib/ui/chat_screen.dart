@@ -382,9 +382,7 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     try {
-      final bytes = await File(filePath).readAsBytes();
       await _sendFileBytes(
-        bytes: bytes,
         fileName: fileName ?? text,
         mimeType: mimeType ?? 'application/octet-stream',
         filePath: filePath,
