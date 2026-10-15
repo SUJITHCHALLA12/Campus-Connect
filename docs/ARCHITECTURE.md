@@ -26,6 +26,9 @@ lib/
   ble/
     ble_protocol.dart  UUIDs, adv name format, BlePacket, FrameCodec
     ble_transport.dart BleChatService: peripheral + central roles, links, routing
+  transfer/
+    fast_file_transfer.dart FastFileTransferService: Nearby → Wi-Fi
+                       Direct → BLE file transfer (v0.10)
   data/
     models.dart        ChatMessage, Conversation, Group
     database.dart      sqflite schema (v3: groups table)
@@ -220,6 +223,59 @@ pushed bytes through the binder with `withData: true`. Group files
 now fan out one transfer per member; file packets carry `gid` so the
 receiver stores the file in the group conversation, not the 1:1 chat.
 See `docs/PROTOCOL.md`.
+
+## Fast file transfer (v0.10)
+
+BLE file transfer is slow (one GATT write per frame, 1 MB cap), so
+file bytes now prefer two faster paths. Chat text, reactions and all
+signalling stay on BLE — only file bytes move. The BLE protocol is
+unchanged; the fast paths are out-of-band (see `docs/PROTOCOL.md`).
+
+**Path choice** (`lib/transfer/fast_file_transfer.dart`,
+`FastFileTransferService.sendFile`, per file, per peer):
+1. **Nearby Connections** (primary) via the `nearby_connections`
+   ^4.3.0 plugin — the Quick Share transport: BLE discovery /
+   handshake, then an automatic upgrade to a high-throughput Wi-Fi
+   / Bluetooth socket. Both phones advertise + discover with
+   endpoint name = their user id (strategy
+   `P2P_POINT_TO_POINT`, service id
+   `com.sujithchalla.campusconnect`), so the sender connects to
+   exactly the intended peer. The sender sends a FILE payload plus
+   a `CCFAST` metadata BYTES payload (payload id, transfer id, file
+   name, mime, group id, sender, kind); the receiver pairs them by
+   payload id, copies the file into `received/` and stores the same
+   file/voice message as the BLE path. Connections are
+   auto-accepted; the auth token is NOT verified (same plaintext
+   posture as v1 BLE). The service starts with the home screen,
+   once the identity exists.
+2. **Raw Wi-Fi Direct** (fallback) via hand-written Kotlin
+   (`WifiDirectHelper.kt`, MethodChannel
+   `com.sujithchalla.campusconnect/wifi_direct`) — no plugin. The
+   receiver runs a server socket on port 8988. The sender tries
+   discovered devices one by one: connect (groupOwnerIntent 0, so
+   the receiver is usually group owner at 192.168.49.1), then send a
+   JSON-line handshake + file bytes. The receiver drops the
+   connection when the handshake's `targetUserId` is not its own —
+   Wi-Fi Direct devices carry no app-level identity, so the
+   handshake does the matching. When the sender ends up as group
+   owner, the receiver's IP is unknown and that candidate is
+   skipped. First-time Wi-Fi Direct between two phones may show a
+   system accept prompt on the receiver.
+3. **BLE** (last resort) — the existing chunked transfer, 1 MB cap.
+
+**Caps.** Fast paths: 100 MB (`FastTransferConfig.fastMaxFileSize`).
+BLE fallback: 1 MB. Files over 1 MB are never loaded into memory
+(the fast paths stream from disk); a big file whose fast paths both
+fail is reported as failed. Group files fan out per member over the
+same paths; voice notes travel the same way (kind `voice`).
+
+**Permissions** (AndroidManifest + `ensurePermissions()` in the
+service, best effort — denial never blocks BLE chat):
+`NEARBY_WIFI_DEVICES` (API 33+), `ACCESS_WIFI_STATE` /
+`CHANGE_WIFI_STATE` (≤ API 31), `ACCESS_FINE_LOCATION` (API 29–31,
+needed for Nearby / Wi-Fi Direct discovery),
+`READ_EXTERNAL_STORAGE` (≤ API 32, file payloads). On Android 10–12
+the location permission is requested at fast-transfer start.
 
 ## Data flow (sending "hi")
 

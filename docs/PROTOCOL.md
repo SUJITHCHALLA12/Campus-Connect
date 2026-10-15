@@ -152,6 +152,35 @@ When `gid` is set on the file packets, the file is stored in that
 group conversation instead of the 1:1 chat with the sender (group
 files fan out: the sender runs one transfer per member).
 
+## Fast file transfer (v0.10) — out-of-band, not a BLE protocol change
+
+The BLE packets above are unchanged. File bytes now prefer two
+faster, out-of-band paths before falling back to BLE chunking:
+
+1. **Nearby Connections** (primary, `nearby_connections` plugin) —
+   the Quick Share transport: BLE discovery/handshake, then an
+   automatic upgrade to a high-throughput Wi-Fi / Bluetooth socket.
+   The sender connects to the Nearby endpoint whose endpoint name is
+   the peer's user id, sends a FILE payload plus a small JSON
+   metadata BYTES payload (`CCFAST` + transfer id, file name, mime,
+   group id, sender, kind), and the receiver saves the file under
+   `received/` and stores the same file/voice message.
+2. **Raw Wi-Fi Direct** (fallback, hand-written Kotlin in
+   `WifiDirectHelper.kt`, MethodChannel `.../wifi_direct`) — the
+   sender tries discovered devices one by one; the receiver's
+   server socket accepts a JSON-line handshake and drops the
+   connection when `targetUserId` is not its own user id (Wi-Fi
+   Direct devices carry no app-level identity). First-time Wi-Fi
+   Direct between two phones may show a system accept prompt on
+   the receiver.
+3. **BLE** (last resort) — the chunked transfer above, 1 MB cap.
+
+Caps: fast paths allow up to 100 MB; BLE fallback keeps the 1 MB
+cap. A big file whose fast paths both fail is reported as failed,
+not truncated. Chat text, reactions and all signalling stay on BLE.
+Permissions: `NEARBY_WIFI_DEVICES` (API 33+), Wi-Fi state +
+location (API 29–31) — see `docs/ARCHITECTURE.md`.
+
 ## Security status (v1)
 
 **Plaintext.** Anyone in radio range running a BLE sniffer can read
