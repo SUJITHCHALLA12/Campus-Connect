@@ -8,7 +8,7 @@ class AppDatabase {
     final dir = await getDatabasesPath();
     return openDatabase(
       p.join(dir, 'campus_connect.db'),
-      version: 4,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE conversations(
@@ -51,7 +51,12 @@ class AppDatabase {
             members TEXT NOT NULL DEFAULT '{}',
             last_message TEXT,
             last_ts INTEGER NOT NULL DEFAULT 0,
-            unread INTEGER NOT NULL DEFAULT 0
+            unread INTEGER NOT NULL DEFAULT 0,
+            owner_id TEXT,
+            perm_send INTEGER NOT NULL DEFAULT 0,
+            perm_edit INTEGER NOT NULL DEFAULT 0,
+            perm_add INTEGER NOT NULL DEFAULT 0,
+            photo_path TEXT
           )
         ''');
       },
@@ -92,6 +97,20 @@ class AppDatabase {
               'ALTER TABLE messages ADD COLUMN reply_to_sender TEXT');
           await db.execute(
               'ALTER TABLE messages ADD COLUMN forwarded INTEGER NOT NULL DEFAULT 0');
+        }
+        if (oldVersion < 5) {
+          // v5: group owner + group permissions + group photo.
+          // All nullable / defaulted (Everyone-can) so existing groups
+          // keep working; pre-v0.9 groups simply have no owner until
+          // they learn one from a groupMsg / groupUpdate packet.
+          await db.execute('ALTER TABLE groups ADD COLUMN owner_id TEXT');
+          await db.execute(
+              'ALTER TABLE groups ADD COLUMN perm_send INTEGER NOT NULL DEFAULT 0');
+          await db.execute(
+              'ALTER TABLE groups ADD COLUMN perm_edit INTEGER NOT NULL DEFAULT 0');
+          await db.execute(
+              'ALTER TABLE groups ADD COLUMN perm_add INTEGER NOT NULL DEFAULT 0');
+          await db.execute('ALTER TABLE groups ADD COLUMN photo_path TEXT');
         }
       },
     );

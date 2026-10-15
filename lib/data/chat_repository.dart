@@ -8,6 +8,7 @@ import 'package:uuid/uuid.dart';
 import '../ble/ble_protocol.dart';
 import '../ble/ble_transport.dart';
 import '../core/identity.dart';
+import 'group_permissions.dart';
 import 'models.dart';
 
 /// Persists chats and exposes them to the UI.
@@ -71,6 +72,9 @@ class ChatRepository extends ChangeNotifier {
         case 'groupMsg':
           await saveIncomingGroupMsg(packet);
           break;
+        case 'groupUpdate':
+          await applyGroupUpdate(packet);
+          break;
         case 'edit':
           await applyRemoteEdit(packet);
           break;
@@ -103,6 +107,7 @@ class ChatRepository extends ChangeNotifier {
   }
 
   /// Creates a group with [memberIds] → display names (excluding self).
+  /// The creator is the group owner (see [Group.ownerId]).
   /// Returns the stored group.
   Future<Group> createGroup({
     required String name,
@@ -114,6 +119,7 @@ class ChatRepository extends ChangeNotifier {
       members: members,
       lastTs: DateTime.now().millisecondsSinceEpoch,
       unread: 0,
+      ownerId: _identity!.userId,
     );
     await _db.insert('groups', group.toMap());
     await _reloadGroups();
@@ -174,6 +180,9 @@ class ChatRepository extends ChangeNotifier {
 
   /// Stores a received group message, creating the group first when
   /// this phone has never seen it (name + members ride in the packet).
+  /// Owner/permissions from the packet are applied for a new group
+  /// outright; for a known group only when the sender IS the owner,
+  /// so a non-owner member cannot spoof a settings change.
   Future<void> saveIncomingGroupMsg(BlePacket packet) async {
     final groupId = packet.groupId;
     if (groupId == null) return;
@@ -187,8 +196,29 @@ class ChatRepository extends ChangeNotifier {
         members: members,
         lastTs: packet.ts,
         unread: 0,
+        ownerId: packet.ownerId,
+        permissions: packet.permissions,
       );
       await _db.insert('groups', group.toMap());
+      await _reloadGroups();
+    } else if (packet.ownerId != null &&
+        packet.from == packet.ownerId &&
+        (group.ownerId != packet.ownerId ||
+            group.permissions != packet.permissions)) {
+      await _db.update(
+        'groups',
+        {
+          'owner_id': packet.ownerId,
+          'perm_send':
+              packet.permissions.sendMessagesOnlyOwner ? 1 : 0,
+          'perm_edit':
+              packet.permissions.editInfoOnlyOwner ? 1 : 0,
+          'perm_add':
+              packet.permissions.addMembersOnlyOwner ? 1 : 0,
+        },
+        where: 'group_id = ?',
+        whereArgs: [groupId],
+      );
       await _reloadGroups();
     }
     final message = ChatMessage(
@@ -213,12 +243,123 @@ class ChatRepository extends ChangeNotifier {
     );
   }
 
+  /// Stores an outgoing group file message as `sending`. The group
+  /// chat screen fans the transfer out to each member and flips it
+  /// to delivered / failed once the fan-out finishes.
+  Future<void> saveOutgoingGroupFile({
+    required Group group,
+    required String transferId,
+    required String fileName,
+    required int fileSize,
+    required String mimeType,
+    required String filePath,
+    required int ts,
+  }) async {
+    final message = ChatMessage(
+      id: transferId,
+      conversationId: group.id,
+      senderId: _identity!.userId,
+      text: fileName,
+      ts: ts,
+      direction: MessageDirection.outgoing,
+      status: MessageStatus.sending,
+      kind: MessageKind.file,
+      fileName: fileName,
+      fileSize: fileSize,
+      mimeType: mimeType,
+      filePath: filePath,
+    );
+    await _insertMessage(message);
+    await _updateGroupSnippet(
+      groupId: group.id,
+      lastMessage: '📎 $fileName',
+      ts: message.ts,
+      unreadDelta: 0,
+    );
+  }
+
   /// Marks a group as read and records it as the open conversation.
   Future<void> markGroupOpen(String groupId) async {
     openConversationId = groupId;
     await _db.update(
       'groups',
       {'unread': 0},
+      where: 'group_id = ?',
+      whereArgs: [groupId],
+    );
+    await _reloadGroups();
+  }
+
+  // ─── Group permissions: owner + Everyone / Only-owner ───
+
+  /// Applies an incoming `groupUpdate` packet. Only the owner may
+  /// change group permissions, so the packet is applied only when the
+  /// sender IS the claimed owner (`from == ownerId`).
+  Future<void> applyGroupUpdate(BlePacket packet) async {
+    final groupId = packet.groupId;
+    final ownerId = packet.ownerId;
+    if (groupId == null || ownerId == null) return;
+    if (packet.from != ownerId) return; // not the owner — ignore
+    final group = groupById(groupId);
+    if (group == null) return;
+    if (group.ownerId == ownerId &&
+        group.permissions == packet.permissions) {
+      return; // nothing changed
+    }
+    await _db.update(
+      'groups',
+      {
+        'owner_id': ownerId,
+        'perm_send': packet.permissions.sendMessagesOnlyOwner ? 1 : 0,
+        'perm_edit': packet.permissions.editInfoOnlyOwner ? 1 : 0,
+        'perm_add': packet.permissions.addMembersOnlyOwner ? 1 : 0,
+      },
+      where: 'group_id = ?',
+      whereArgs: [groupId],
+    );
+    await _reloadGroups();
+  }
+
+  /// Persists the owner's own permission change locally. The caller
+  /// fans a `groupUpdate` packet out to the members afterwards.
+  Future<void> updateGroupPermissions({
+    required String groupId,
+    required GroupPermissions permissions,
+  }) async {
+    await _db.update(
+      'groups',
+      {
+        'perm_send': permissions.sendMessagesOnlyOwner ? 1 : 0,
+        'perm_edit': permissions.editInfoOnlyOwner ? 1 : 0,
+        'perm_add': permissions.addMembersOnlyOwner ? 1 : 0,
+      },
+      where: 'group_id = ?',
+      whereArgs: [groupId],
+    );
+    await _reloadGroups();
+  }
+
+  // ─── Group photo (local-only) ─────────────────────────────
+
+  /// Remembers the group photo at [path]. The caller copies the
+  /// picked image into app storage first (see GroupInfoScreen).
+  /// The photo is never sent to peers — other phones keep the
+  /// default group avatar.
+  Future<void> setGroupPhotoPath(String groupId, String path) async {
+    await _db.update(
+      'groups',
+      {'photo_path': path},
+      where: 'group_id = ?',
+      whereArgs: [groupId],
+    );
+    await _reloadGroups();
+  }
+
+  /// Forgets the group photo (the caller deletes the file).
+  Future<void> clearGroupPhotoPath(String groupId) async {
+    await _db.update(
+      'groups',
+      {'photo_path': null},
       where: 'group_id = ?',
       whereArgs: [groupId],
     );
@@ -524,16 +665,21 @@ class ChatRepository extends ChangeNotifier {
   }
 
   /// Stores a received file (the transport already saved the bytes and
-  /// hands us the local path in the synthetic `file` packet).
+  /// hands us the local path in the synthetic `file` packet). When the
+  /// packet carries a known group id, the file lands in that group
+  /// conversation; otherwise it lands in the 1:1 chat with the sender.
   Future<void> saveIncomingFile(BlePacket packet) async {
     // Voice notes travel as file transfers with an audio mime type —
     // they get the voice kind so the UI shows a player bubble.
     final kind = (packet.mimeType ?? '').startsWith('audio/')
         ? MessageKind.voice
         : MessageKind.file;
+    final groupId = packet.groupId;
+    final isGroupFile = groupId != null && groupById(groupId) != null;
+    final conversationId = isGroupFile ? groupId! : packet.from;
     final message = ChatMessage(
       id: packet.id,
-      conversationId: packet.from,
+      conversationId: conversationId,
       senderId: packet.from,
       text: packet.fileName ?? 'File',
       ts: packet.ts,
@@ -546,6 +692,17 @@ class ChatRepository extends ChangeNotifier {
       filePath: packet.filePath,
     );
     await _insertMessage(message);
+    if (isGroupFile) {
+      await _updateGroupSnippet(
+        groupId: groupId!,
+        lastMessage: kind == MessageKind.voice
+            ? '🎤 Voice message'
+            : '📎 ${message.text}',
+        ts: message.ts,
+        unreadDelta: openConversationId == groupId ? 0 : 1,
+      );
+      return;
+    }
     await _upsertConversation(
       peerUserId: packet.from,
       peerName: packet.name.isEmpty ? 'Campus user' : packet.name,

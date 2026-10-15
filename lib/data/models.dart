@@ -1,6 +1,8 @@
 /// Plain data models for the chat layer. Persistence lives in
 /// [AppDatabase]/[ChatRepository]; the BLE layer never touches these.
 import 'dart:convert';
+
+import 'group_permissions.dart';
 enum MessageDirection { outgoing, incoming }
 
 enum MessageStatus {
@@ -145,6 +147,11 @@ class ChatMessage {
 /// maps every member's user id to their display name (excluding self);
 /// it arrives inside `groupMsg` packets so a receiver who has never
 /// seen the group can create it locally.
+///
+/// [ownerId] is the creator's user id (null for groups created before
+/// v0.9, which predate ownership). Only the owner can change
+/// [permissions]. The group photo ([photoPath]) is local-only, like
+/// the profile photo — it is never sent to peers.
 class Group {
   final String id;
   final String name;
@@ -152,6 +159,9 @@ class Group {
   final String? lastMessage;
   final int lastTs;
   final int unread;
+  final String? ownerId;
+  final GroupPermissions permissions;
+  final String? photoPath;
 
   Group({
     required this.id,
@@ -160,6 +170,9 @@ class Group {
     this.lastMessage,
     required this.lastTs,
     required this.unread,
+    this.ownerId,
+    this.permissions = const GroupPermissions(),
+    this.photoPath,
   });
 
   Map<String, Object?> toMap() => {
@@ -169,6 +182,11 @@ class Group {
         'last_message': lastMessage,
         'last_ts': lastTs,
         'unread': unread,
+        'owner_id': ownerId,
+        'perm_send': permissions.sendMessagesOnlyOwner ? 1 : 0,
+        'perm_edit': permissions.editInfoOnlyOwner ? 1 : 0,
+        'perm_add': permissions.addMembersOnlyOwner ? 1 : 0,
+        'photo_path': photoPath,
       };
 
   factory Group.fromMap(Map<String, Object?> m) {
@@ -183,6 +201,16 @@ class Group {
       lastMessage: m['last_message'] as String?,
       lastTs: (m['last_ts'] as num).toInt(),
       unread: (m['unread'] as num).toInt(),
+      ownerId: m['owner_id'] as String?,
+      permissions: GroupPermissions(
+        sendMessagesOnlyOwner:
+            ((m['perm_send'] as num?)?.toInt() ?? 0) == 1,
+        editInfoOnlyOwner:
+            ((m['perm_edit'] as num?)?.toInt() ?? 0) == 1,
+        addMembersOnlyOwner:
+            ((m['perm_add'] as num?)?.toInt() ?? 0) == 1,
+      ),
+      photoPath: m['photo_path'] as String?,
     );
   }
 
