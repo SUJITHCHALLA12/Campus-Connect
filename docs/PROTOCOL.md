@@ -97,6 +97,18 @@ On receiving `groupMsg`, the receiver creates the group locally if it
 has never seen the id (from `gname` + `members`), stores the message,
 and replies `ack` like a normal message.
 
+// edit — replaces the text of a message the sender authored
+{"t":"edit","id":"<uuid>","from":"<userId>","name":"<display>","ts":123,"text":"fixed","editId":"<edited msg uuid>","gid":"<group uuid, if group>"}
+
+// delete — deletes a message the sender authored everywhere
+{"t":"delete","id":"<uuid>","from":"<userId>","name":"<display>","ts":123,"deleteId":"<deleted msg uuid>","gid":"<group uuid, if group>"}
+
+// react — a reaction (same emoji again removes it)
+{"t":"react","id":"<uuid>","from":"<userId>","name":"<display>","ts":123,"reactId":"<msg uuid>","reactEmoji":"❤️","gid":"<group uuid, if group>"}
+
+// msg / groupMsg may also carry a reply quote and/or the forwarded flag
+{"t":"msg","id":"<uuid>","from":"<userId>","name":"<display>","ts":123,"text":"got it","replyTo":"<quoted msg uuid>","replyText":"<quoted text>","replyName":"<quoted sender>","fwd":true}
+
 File transfers reuse the same framing: each `fileChunk` packet is itself
 split into frames by the codec (a 1 KB chunk fits in ≤255 frames even at
 the MTU-23 minimum). The receiver collects chunks per transfer id;

@@ -1,4 +1,4 @@
-# Campus Connect — Architecture (v0.5)
+# Campus Connect — Architecture (v0.6)
 
 ## Decision log
 
@@ -90,6 +90,28 @@ repository stores it with kind `voice` (sender passes the kind
 explicitly; the receiver detects `audio/*` mimes), and the chat renders
 a play/pause bubble with progress instead of a file tile. Group chats
 do not send voice yet — their composer shows the send button only.
+
+## Live distance + message actions (v0.6)
+
+**Distance.** The chat header shows the peer's estimated distance
+("Nearby · 12.345 m away"), refreshed every 30 s from the smoothed
+advertisement RSSI (exponential moving average) via the log-distance
+path-loss model (txPower −59 dBm at 1 m, exponent 2.0). BLE cannot
+measure true distance — walls, bodies and reflections shift RSSI by
+metres — so the number is an estimate, shown to 3 decimals as asked.
+
+**Message actions.** Long-press a message for Reply / React / Edit /
+Copy / Forward / Info / Delete. Replies carry a quote (original id,
+text, sender); slide any bubble horizontally to reply. Reactions are
+one emoji per sender stored as a JSON map on the message; sending the
+same emoji again removes it. Edit is limited to the author's own text
+messages within 5 minutes of sending, and marks the message edited.
+Delete for me removes the local copy; delete for everyone sends a
+delete packet the receiver applies only if the sender is the author.
+Forward sends a copy with the forwarded flag (text to any chat;
+files/voice to 1:1 chats only). DB schema is v4: `messages` gained
+`edited`, `reactions`, `reply_to_id`, `reply_to_text`,
+`reply_to_sender`, `forwarded`.
 
 ## Data flow (sending "hi")
 

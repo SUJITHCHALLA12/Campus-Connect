@@ -3,7 +3,7 @@
 Nearby-first campus messaging over **Bluetooth Low Energy**. No internet, no
 servers, no accounts — open the app near another phone running it and chat.
 
-> **Status:** v0.5 (Android). Messages are currently **plaintext**
+> **Status:** v0.6 (Android). Messages are currently **plaintext**
 > over the air; per-conversation encryption is a planned milestone, not a
 > claim. See `docs/ARCHITECTURE.md`.
 
@@ -69,13 +69,19 @@ docs/        PROTOCOL.md, ARCHITECTURE.md
    Home / Chats / + / Groups / Profile, Chats / Groups / Updates tabs,
    centre + button → pair with nearby or create a group chat. Group
    messages fan out to every member over their 1:1 BLE link.
-5. **M1.8 / v0.5** — WhatsApp-style composer + voice ✅ (this): rounded
+5. **M1.8 / v0.5** — WhatsApp-style composer + voice ✅: rounded
    input pill (emoji · Message · attach · camera), send button when
    typing / mic button when empty, tap-to-record voice notes (60 s cap)
    sent as audio file transfers, emoji picker, voice bubble playback.
-5. **M2** — Privacy: ECDH + AES-GCM per conversation
-6. **M4** — Internet relay for distant users (Supabase project on standby)
-7. **M5** — iOS support
+6. **M1.9 / v0.6** — Live distance + message actions ✅ (this): chat
+   header shows the peer's estimated distance (RSSI, 3 decimals,
+   refreshed every 30 s). Long-press a message for Reply / React /
+   Edit (own text, 5 min window) / Copy / Forward / Info / Delete
+   (for me / for everyone). Slide any bubble to reply; replies carry
+   a quote, forwarded messages a label, edits an "Edited" tag.
+7. **M2** — Privacy: ECDH + AES-GCM per conversation
+8. **M4** — Internet relay for distant users (Supabase project on standby)
+9. **M5** — iOS support
 
 The app theme follows the logo: cyan → violet gradients on a deep-navy
 background, with the logo on the splash and welcome screens.
