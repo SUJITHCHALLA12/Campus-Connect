@@ -70,6 +70,11 @@ abstract final class BleProtocol {
 ///   * msg   — a chat message
 ///   * ack   — delivery acknowledgement for a msg id
 ///   * bye   — graceful link teardown notice
+///   * fileStart — begins a file transfer (carries name, size, mime)
+///   * fileChunk — one base64 chunk of a file transfer (carries seq, data)
+///   * fileEnd — ends a file transfer; the receiver assembles + saves it
+///   * file  — synthetic packet the transport emits to the repository
+///             once an incoming file is saved (carries the local path)
 class BlePacket {
   final String type;
   final String id;
@@ -78,6 +83,12 @@ class BlePacket {
   final int ts;
   final String? text;
   final String? shortId;
+  final String? fileName;
+  final int? fileSize;
+  final String? mimeType;
+  final String? filePath;
+  final int? seq;
+  final String? data;
 
   BlePacket({
     required this.type,
@@ -87,6 +98,12 @@ class BlePacket {
     required this.ts,
     this.text,
     this.shortId,
+    this.fileName,
+    this.fileSize,
+    this.mimeType,
+    this.filePath,
+    this.seq,
+    this.data,
   });
 
   factory BlePacket.hello({
@@ -130,6 +147,85 @@ class BlePacket {
         ts: DateTime.now().millisecondsSinceEpoch,
       );
 
+  /// Starts a file transfer. [id] is the transfer id — the receiver's
+  /// saved file message and the sender's ack both use it.
+  factory BlePacket.fileStart({
+    required String transferId,
+    required String from,
+    required String name,
+    required String fileName,
+    required int fileSize,
+    required String mimeType,
+  }) =>
+      BlePacket(
+        type: 'fileStart',
+        id: transferId,
+        from: from,
+        name: name,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        fileName: fileName,
+        fileSize: fileSize,
+        mimeType: mimeType,
+      );
+
+  /// One chunk of a file transfer. [data] is base64 of up to
+  /// [FileTransferConfig.chunkBytes] raw bytes.
+  factory BlePacket.fileChunk({
+    required String transferId,
+    required String from,
+    required String name,
+    required int seq,
+    required String data,
+  }) =>
+      BlePacket(
+        type: 'fileChunk',
+        id: transferId,
+        from: from,
+        name: name,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        seq: seq,
+        data: data,
+      );
+
+  /// Ends a file transfer; the receiver assembles and saves the file.
+  factory BlePacket.fileEnd({
+    required String transferId,
+    required String from,
+    required String name,
+  }) =>
+      BlePacket(
+        type: 'fileEnd',
+        id: transferId,
+        from: from,
+        name: name,
+        ts: DateTime.now().millisecondsSinceEpoch,
+      );
+
+  /// Synthetic packet the transport emits after saving an incoming
+  /// file, so the repository can store it as a file message.
+  factory BlePacket.file({
+    required String transferId,
+    required String from,
+    required String name,
+    required int ts,
+    required String fileName,
+    required int fileSize,
+    required String mimeType,
+    required String filePath,
+  }) =>
+      BlePacket(
+        type: 'file',
+        id: transferId,
+        from: from,
+        name: name,
+        ts: ts,
+        text: fileName,
+        fileName: fileName,
+        fileSize: fileSize,
+        mimeType: mimeType,
+        filePath: filePath,
+      );
+
   Map<String, dynamic> toJson() => {
         't': type,
         'id': id,
@@ -138,6 +234,12 @@ class BlePacket {
         'ts': ts,
         if (text != null) 'text': text,
         if (shortId != null) 'sid': shortId,
+        if (fileName != null) 'fileName': fileName,
+        if (fileSize != null) 'fileSize': fileSize,
+        if (mimeType != null) 'mime': mimeType,
+        if (filePath != null) 'path': filePath,
+        if (seq != null) 'seq': seq,
+        if (data != null) 'data': data,
       };
 
   factory BlePacket.fromJson(Map<String, dynamic> json) => BlePacket(
@@ -148,6 +250,12 @@ class BlePacket {
         ts: (json['ts'] as num?)?.toInt() ?? 0,
         text: json['text'] as String?,
         shortId: json['sid'] as String?,
+        fileName: json['fileName'] as String?,
+        fileSize: (json['fileSize'] as num?)?.toInt(),
+        mimeType: json['mime'] as String?,
+        filePath: json['path'] as String?,
+        seq: (json['seq'] as num?)?.toInt(),
+        data: json['data'] as String?,
       );
 
   Uint8List encode() => Uint8List.fromList(utf8.encode(jsonEncode(toJson())));

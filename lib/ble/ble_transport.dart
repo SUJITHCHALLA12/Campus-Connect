@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../core/constants.dart';
 import '../core/identity.dart';
 import 'ble_protocol.dart';
+import 'file_transfer.dart';
 
 /// A nearby phone heard advertising the Campus Connect service.
 class NearbyPeer {
@@ -81,6 +82,10 @@ class BleChatService extends ChangeNotifier {
 
   final List<StreamSubscription> _subs = [];
   Timer? _pruneTimer;
+
+  /// Collects incoming file-transfer packets (fileStart/fileChunk/
+  /// fileEnd) and assembles the file bytes.
+  final FileReceiver fileReceiver = FileReceiver();
 
   late GATTCharacteristic _hostRxChar; // peripheral-side RX
   late GATTCharacteristic _hostTxChar; // peripheral-side TX
@@ -463,8 +468,51 @@ class BleChatService extends ChangeNotifier {
         break;
       case 'bye':
         break;
+      case 'fileStart':
+        fileReceiver.handleStart(packet);
+        break;
+      case 'fileChunk':
+        fileReceiver.handleChunk(packet);
+        break;
+      case 'fileEnd':
+        unawaited(_finishIncomingFile(link, packet));
+        break;
     }
     notifyListeners();
+  }
+
+  /// Assembles an incoming file transfer, saves it, emits a synthetic
+  /// `file` packet for the repository, and acks the transfer id so the
+  /// sender can mark its file message delivered.
+  Future<void> _finishIncomingFile(PeerLink link, BlePacket packet) async {
+    final completed = fileReceiver.handleEnd(packet);
+    if (completed == null) return; // incomplete or corrupt transfer
+    late final String path;
+    try {
+      path = await FileStorage.saveIncoming(
+        fileName: completed.fileName,
+        bytes: completed.bytes,
+      );
+    } catch (_) {
+      return;
+    }
+    _incoming.add(BlePacket.file(
+      transferId: packet.id,
+      from: completed.from,
+      name: completed.name,
+      ts: completed.ts,
+      fileName: completed.fileName,
+      fileSize: completed.fileSize,
+      mimeType: completed.mimeType,
+      filePath: path,
+    ));
+    await _writeToLink(
+        link,
+        BlePacket.ack(
+          forId: packet.id,
+          from: identity.userId,
+          name: identity.displayName,
+        ));
   }
 
   Future<void> _writeToLink(PeerLink link, BlePacket packet) async {

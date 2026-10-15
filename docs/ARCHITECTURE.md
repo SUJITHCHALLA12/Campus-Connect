@@ -42,6 +42,26 @@ aquatic palette, glass panels, bubble/input styling — implemented as
 original code on top of the BLE-first core. v1 has no internet backend
 by design (Sujith's call, 2026-10-11).
 
+## Startup flow (v0.3)
+
+`main()` creates the service instances, then `runApp` immediately —
+the splash screen (logo + loading spinner) is on screen while
+`AppBootstrap` opens the database and loads the identity. Once ready,
+the app routes to the welcome screen ("Dive in" — first run) or straight
+to chats. BLE starts when the home screen boots, as before.
+
+## File sharing (v0.3)
+
+File messages are a second message kind alongside text. Sending: the
+chat composer offers image + file pickers; the file moves as
+`fileStart` / `fileChunk` / `fileEnd` packets (see `docs/PROTOCOL.md`),
+with live progress on the outgoing bubble. Receiving: the transport
+assembles the bytes, saves them under the app documents `received/`
+folder, and the repository stores one file message pointing at the
+local copy. Tapping a file tile opens it with the platform viewer.
+DB schema is v2: `messages` gained `kind`, `file_name`, `file_size`,
+`mime_type`, `file_path` (v1 installs migrate via `ALTER TABLE`).
+
 ## Data flow (sending "hi")
 
 1. `ChatScreen` builds `BlePacket.msg` → `ChatRepository.saveOutgoing` (status: sent).

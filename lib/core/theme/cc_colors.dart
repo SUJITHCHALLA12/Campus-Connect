@@ -1,20 +1,28 @@
 import 'package:flutter/material.dart';
 
-/// Campus Connect color system — aquatic "liquid glass" design language.
+/// Campus Connect color system — logo-derived palette.
 ///
-/// Palette is still a placeholder until the real Campus Connect logo
-/// colors arrive from Figma; the structure below makes that a one-file swap.
+/// Primary: neon cyan from the logo hexagon. Secondary accent: the
+/// logo's violet. Background: the logo's near-black navy. Every screen
+/// reads these tokens, so the whole app follows the logo colours.
 abstract final class CcColors {
   CcColors._();
 
   // ─── Brand ─────────────────────────────────────────────
-  static const Color aquaCore = Color(0xFF0EA5E9);
-  static const Color aquaCyan = Color(0xFF22D3EE);
-  static const Color deepSea = Color(0xFF0C4A6E);
-  static const Color biolume = Color(0xFF38BDF8);
+  /// Logo cyan — primary accent (hexagon outline, "C").
+  static const Color aquaCore = Color(0xFF00C2FF);
+
+  /// Logo violet — secondary accent (inner hexagon).
+  static const Color aquaCyan = Color(0xFFA855F7);
+
+  /// Deep navy from the logo background.
+  static const Color deepSea = Color(0xFF0A1128);
+
+  /// Bright cyan for glows and highlights.
+  static const Color biolume = Color(0xFF38E1FF);
 
   // ─── Background ────────────────────────────────────────
-  static const Color abyss = Color(0xFF060D1A);
+  static const Color abyss = Color(0xFF050816);
 
   // ─── Text ──────────────────────────────────────────────
   static const Color textPrimary = Colors.white;
@@ -35,6 +43,7 @@ abstract final class CcColors {
   static const Color msgIn = Color(0x1AFFFFFF);
 
   // ─── Gradients ─────────────────────────────────────────
+  /// Logo gradient: cyan → violet.
   static const LinearGradient aquaGradient = LinearGradient(
     colors: [aquaCore, aquaCyan],
     begin: Alignment.topLeft,
@@ -42,13 +51,13 @@ abstract final class CcColors {
   );
 
   static const LinearGradient msgOutGradient = LinearGradient(
-    colors: [Color(0x660EA5E9), Color(0x4D38BDF8)],
+    colors: [Color(0x6600C2FF), Color(0x4DA855F7)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
   static const LinearGradient buttonGradient = LinearGradient(
-    colors: [Color(0xFF0EA5E9), Color(0xFF0284C7)],
+    colors: [Color(0xFF00C2FF), Color(0xFF8B5CF6)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );

@@ -9,6 +9,11 @@ enum MessageStatus {
   failed, // no link / write error
 }
 
+/// Text messages carry [text]; file messages carry the file metadata and
+/// the local [filePath] (sender side: the picked file; receiver side:
+/// the saved copy under the app documents folder).
+enum MessageKind { text, file }
+
 class ChatMessage {
   final String id;
   final String conversationId; // peer user id
@@ -17,6 +22,11 @@ class ChatMessage {
   final int ts; // epoch millis
   final MessageDirection direction;
   final MessageStatus status;
+  final MessageKind kind;
+  final String? fileName;
+  final int? fileSize;
+  final String? mimeType;
+  final String? filePath;
 
   ChatMessage({
     required this.id,
@@ -26,7 +36,29 @@ class ChatMessage {
     required this.ts,
     required this.direction,
     required this.status,
+    this.kind = MessageKind.text,
+    this.fileName,
+    this.fileSize,
+    this.mimeType,
+    this.filePath,
   });
+
+  /// Copies the message, replacing only the given fields. Used when a
+  /// status flips (sent → delivered / failed) so file metadata survives.
+  ChatMessage copyWith({MessageStatus? status}) => ChatMessage(
+        id: id,
+        conversationId: conversationId,
+        senderId: senderId,
+        text: text,
+        ts: ts,
+        direction: direction,
+        status: status ?? this.status,
+        kind: kind,
+        fileName: fileName,
+        fileSize: fileSize,
+        mimeType: mimeType,
+        filePath: filePath,
+      );
 
   Map<String, Object?> toMap() => {
         'id': id,
@@ -36,6 +68,11 @@ class ChatMessage {
         'ts': ts,
         'direction': direction.index,
         'status': status.index,
+        'kind': kind.index,
+        'file_name': fileName,
+        'file_size': fileSize,
+        'mime_type': mimeType,
+        'file_path': filePath,
       };
 
   factory ChatMessage.fromMap(Map<String, Object?> m) => ChatMessage(
@@ -46,6 +83,11 @@ class ChatMessage {
         ts: (m['ts'] as num).toInt(),
         direction: MessageDirection.values[(m['direction'] as num).toInt()],
         status: MessageStatus.values[(m['status'] as num).toInt()],
+        kind: MessageKind.values[(m['kind'] as num?)?.toInt() ?? 0],
+        fileName: m['file_name'] as String?,
+        fileSize: (m['file_size'] as num?)?.toInt(),
+        mimeType: m['mime_type'] as String?,
+        filePath: m['file_path'] as String?,
       );
 }
 

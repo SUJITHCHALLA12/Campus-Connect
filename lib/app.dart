@@ -3,9 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 
+import 'core/bootstrap.dart';
 import 'core/constants.dart';
 import 'core/identity.dart';
 import 'ui/home_screen.dart';
+import 'ui/splash_screen.dart';
 import 'ui/welcome_screen.dart';
 
 /// Root widget — aquatic "liquid glass" theme, wired to the
@@ -16,6 +18,7 @@ class CampusConnectApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final identity = context.watch<IdentityStore>();
+    final bootstrap = context.watch<AppBootstrap>();
 
     final base = ThemeData.dark(useMaterial3: true);
     return MaterialApp(
@@ -92,9 +95,11 @@ class CampusConnectApp extends StatelessWidget {
           behavior: SnackBarBehavior.floating,
         ),
       ),
-      home: identity.hasIdentity
-          ? const HomeScreen()
-          : const WelcomeScreen(),
+      home: !bootstrap.ready
+          ? const SplashScreen()
+          : identity.hasIdentity
+              ? const HomeScreen()
+              : const WelcomeScreen(),
     );
   }
 }

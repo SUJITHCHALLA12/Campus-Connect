@@ -18,6 +18,11 @@ arrival, acknowledged, and stored locally in SQLite.
 Full wire spec: [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 Architecture + decision log: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+Chats also carry files: the composer has image + file buttons, and
+picked files (up to 1 MB) travel to the other phone over the same BLE
+link as chunked `fileStart` / `fileChunk` / `fileEnd` packets. Received
+files save to the app's documents folder and open with a tap.
+
 ## Quick start (Windows, like your BitLock setup)
 
 ```bat
@@ -55,13 +60,17 @@ docs/        PROTOCOL.md, ARCHITECTURE.md
 2. **M1.5 / v0.2** — Aquatic liquid-glass UI redesign ✅ (this):
    welcome screen, bottom-tab home (Chats / Nearby / Settings), glass
    chat screen. Same BLE core underneath.
-3. **M2** — Privacy: ECDH + AES-GCM per conversation
-4. **M3** — Local group chats
-5. **M4** — Internet relay for distant users (Supabase project on standby)
-6. **M5** — iOS support
+3. **M1.6 / v0.3** — Logo branding + file sharing ✅ (this): app theme
+   and launcher icon from the Campus Connect logo (cyan → violet on
+   deep navy), splash loading page → "Dive in" → chats, image + file
+   sending over BLE (1 MB cap).
+4. **M2** — Privacy: ECDH + AES-GCM per conversation
+5. **M3** — Local group chats
+6. **M4** — Internet relay for distant users (Supabase project on standby)
+7. **M5** — iOS support
 
-Brand palette in the app is a placeholder — swap in the real logo colors
-from Figma when they're ready.
+The app theme follows the logo: cyan → violet gradients on a deep-navy
+background, with the logo on the splash and welcome screens.
 
 ## Credits
 

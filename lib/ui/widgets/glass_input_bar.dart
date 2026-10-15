@@ -4,14 +4,16 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../core/theme/cc_colors.dart';
 import '../../core/theme/cc_glass.dart';
 
-/// Frosted-glass message composer: rounded input with a gradient send
-/// button. Attach/emoji actions are visual for now (media over BLE
-/// arrives with a later milestone).
+/// Frosted-glass message composer: rounded input with image / file
+/// attach buttons and a gradient send button. The attach buttons pick
+/// a file and send it to the peer over BLE (1 MB cap).
 class GlassInputBar extends StatelessWidget {
   final TextEditingController controller;
   final VoidCallback onSend;
   final bool isSending;
   final bool enabled;
+  final VoidCallback? onAttachImage;
+  final VoidCallback? onAttachFile;
 
   const GlassInputBar({
     super.key,
@@ -19,6 +21,8 @@ class GlassInputBar extends StatelessWidget {
     required this.onSend,
     this.isSending = false,
     this.enabled = true,
+    this.onAttachImage,
+    this.onAttachFile,
   });
 
   @override
@@ -79,10 +83,18 @@ class GlassInputBar extends StatelessWidget {
                     ),
                   ),
                   IconButton(
-                    onPressed: null,
+                    onPressed: onAttachImage,
+                    icon: const Icon(
+                      Icons.image_outlined,
+                      color: CcColors.textSecondary,
+                      size: 22,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: onAttachFile,
                     icon: const Icon(
                       Icons.attach_file,
-                      color: CcColors.textMuted,
+                      color: CcColors.textSecondary,
                       size: 22,
                     ),
                   ),

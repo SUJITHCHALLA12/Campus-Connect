@@ -48,17 +48,18 @@ class _WelcomeScreenState extends State<WelcomeScreen> {
                   const Spacer(flex: 2),
                   Center(
                     child: Container(
-                      width: 112,
-                      height: 112,
+                      width: 132,
+                      height: 132,
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: CcColors.aquaGradient,
+                        borderRadius: BorderRadius.circular(32),
                         boxShadow: CcColors.cyanGlow,
                       ),
-                      child: const Icon(
-                        Icons.bluetooth_connected_rounded,
-                        size: 56,
-                        color: Colors.white,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(32),
+                        child: Image.asset(
+                          'assets/images/logo.png',
+                          fit: BoxFit.cover,
+                        ),
                       ),
                     ),
                   ),

@@ -3,23 +3,24 @@ import 'package:provider/provider.dart';
 
 import 'app.dart';
 import 'ble/ble_transport.dart';
+import 'core/bootstrap.dart';
 import 'core/identity.dart';
 import 'data/chat_repository.dart';
-import 'data/database.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final db = await AppDatabase.open();
-
+  // Instances are created up front; the heavy async work (database,
+  // identity load) runs after the splash screen is on screen, via
+  // AppBootstrap, so startup shows the loading page immediately.
   final identity = IdentityStore();
-  await identity.load();
-
   final repository = ChatRepository();
-  await repository.init(db);
-
   final ble = BleChatService(identity);
-  repository.bind(ble, identity);
+  final bootstrap = AppBootstrap(
+    identity: identity,
+    repository: repository,
+    ble: ble,
+  );
 
   runApp(
     MultiProvider(
@@ -27,6 +28,7 @@ Future<void> main() async {
         ChangeNotifierProvider.value(value: identity),
         ChangeNotifierProvider.value(value: repository),
         ChangeNotifierProvider.value(value: ble),
+        ChangeNotifierProvider.value(value: bootstrap),
       ],
       child: const CampusConnectApp(),
     ),

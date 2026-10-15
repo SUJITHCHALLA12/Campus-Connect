@@ -75,10 +75,30 @@ dropped.
 
 // bye — graceful teardown notice (optional)
 {"t":"bye","id":"<uuid>","from":"<userId>","name":"<display>","ts":123}
+
+// fileStart — begins a file transfer (id = transfer id)
+{"t":"fileStart","id":"<transfer uuid>","from":"<userId>","name":"<display>","ts":123,"fileName":"photo.jpg","fileSize":184320,"mime":"image/jpeg"}
+
+// fileChunk — one chunk: base64 of up to 8 KB raw bytes
+{"t":"fileChunk","id":"<transfer uuid>","from":"<userId>","name":"<display>","ts":123,"seq":0,"data":"<base64>"}
+
+// fileEnd — ends a file transfer; receiver assembles + saves it
+{"t":"fileEnd","id":"<transfer uuid>","from":"<userId>","name":"<display>","ts":123}
 ```
 
 On receiving `msg`, the receiver stores it and replies `ack`. The sender
 marks the message delivered when the ack arrives.
+
+File transfers reuse the same framing: each `fileChunk` packet is itself
+split into frames by the codec (an 8 KB chunk fits in ≤255 frames at the
+negotiated chunk size). The receiver collects chunks per transfer id;
+on `fileEnd` it verifies every chunk arrived and the total byte count
+matches `fileSize`, saves the file under the app documents `received/`
+folder, stores one file message, and replies `ack` with the transfer id
+so the sender marks its file message delivered. Incomplete or corrupt
+transfers are dropped silently. Files are capped at 1 MB — BLE
+throughput is low (each frame is a separate GATT write), so bigger files
+are refused on the sender side before any byte goes over the air.
 
 ## Security status (v1)
 
@@ -97,3 +117,6 @@ describe v1 as end-to-end encrypted — see `docs/ARCHITECTURE.md` milestones.
    visibly (red icon), message stays stored.
 6. Re-enable → link re-establishes automatically via rescan.
 7. 500-char message → arrives complete (chunking works).
+8. Send a small image (< 1 MB) → receiver gets a file tile, taps it,
+   and the image opens in the platform viewer.
+9. Send a > 1 MB file → sender sees the "1 MB max" notice, nothing sent.

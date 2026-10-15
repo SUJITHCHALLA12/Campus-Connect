@@ -1,9 +1,15 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../ble/ble_protocol.dart';
 import '../ble/ble_transport.dart';
+import '../ble/file_transfer.dart';
 import '../core/constants.dart';
 import '../core/identity.dart';
 import '../data/chat_repository.dart';
@@ -97,6 +103,77 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// Picks an image or a file and sends it to the peer over BLE.
+  /// Files are capped at 1 MB (see [FileTransferConfig]).
+  Future<void> _pickAndSendFile(FileType type) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: type,
+      allowMultiple: false,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final picked = result.files.single;
+
+    Uint8List? bytes = picked.bytes;
+    bytes ??= picked.path != null
+        ? await File(picked.path!).readAsBytes()
+        : null;
+    if (bytes == null) return;
+    if (bytes.length > FileTransferConfig.maxFileSize) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('File too big — 1 MB max over Bluetooth.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    final identity = context.read<IdentityStore>();
+    final ble = context.read<BleChatService>();
+    final repo = context.read<ChatRepository>();
+    final transferId = const Uuid().v4();
+    final fileName = picked.name;
+    final mimeType = mimeForFileName(fileName);
+
+    await repo.saveOutgoingFile(
+      peerUserId: widget.peerUserId,
+      peerName: widget.peerName,
+      transferId: transferId,
+      fileName: fileName,
+      fileSize: bytes.length,
+      mimeType: mimeType,
+      filePath: picked.path ?? '',
+      ts: DateTime.now().millisecondsSinceEpoch,
+    );
+    try {
+      await FileTransferService.sendFile(
+        send: (packet) => ble.sendTo(widget.peerUserId, packet),
+        from: identity.userId,
+        name: identity.displayName,
+        transferId: transferId,
+        fileName: fileName,
+        bytes: bytes,
+        mimeType: mimeType,
+        onProgress: (p) => repo.updateFileProgress(transferId, p),
+      );
+      await repo.markDelivered(transferId);
+    } catch (_) {
+      await repo.markFailed(transferId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('File not delivered — peer may be out of range.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+    if (mounted) _scrollToBottom();
+  }
+
   @override
   Widget build(BuildContext context) {
     final repo = context.watch<ChatRepository>();
@@ -183,7 +260,10 @@ class _ChatScreenState extends State<ChatScreen> {
                             12, 8, 12, 12),
                         itemCount: messages.length,
                         itemBuilder: (_, i) => MessageBubble(
-                            message: messages[i]),
+                              message: messages[i],
+                              progress:
+                                  repo.fileProgress[messages[i].id],
+                            ),
                       );
                     },
                   ),
@@ -192,6 +272,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   controller: _controller,
                   onSend: _send,
                   isSending: _sending,
+                  onAttachImage: () => _pickAndSendFile(FileType.image),
+                  onAttachFile: () => _pickAndSendFile(FileType.any),
                 ),
               ],
             ),
