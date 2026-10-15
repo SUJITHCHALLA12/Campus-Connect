@@ -714,6 +714,70 @@ class ChatRepository extends ChangeNotifier {
     );
   }
 
+  /// Stores a file received over a fast path (Nearby / Wi-Fi
+  /// Direct). Mirrors [saveIncomingFile], but takes explicit fields
+  /// instead of a BLE packet — the fast paths are out-of-band from
+  /// the BLE protocol, so there is no packet to unpack. The caller
+  /// (FastFileTransferService) has already saved the bytes and
+  /// hands us the local path. Group files land in the group
+  /// conversation when the group is known, else the 1:1 chat.
+  Future<void> saveIncomingFastFile({
+    required String transferId,
+    required String from,
+    required String senderName,
+    required String fileName,
+    required int fileSize,
+    required String mimeType,
+    required String filePath,
+    required int ts,
+    String? groupId,
+    MessageKind kind = MessageKind.file,
+  }) async {
+    // Voice notes travel as file transfers with an audio mime type —
+    // they get the voice kind so the UI shows a player bubble.
+    final resolvedKind =
+        (kind == MessageKind.voice || mimeType.startsWith('audio/'))
+            ? MessageKind.voice
+            : MessageKind.file;
+    final isGroupFile = groupId != null && groupById(groupId) != null;
+    final conversationId = isGroupFile ? groupId! : from;
+    final message = ChatMessage(
+      id: transferId,
+      conversationId: conversationId,
+      senderId: from,
+      text: fileName,
+      ts: ts,
+      direction: MessageDirection.incoming,
+      status: MessageStatus.delivered,
+      kind: resolvedKind,
+      fileName: fileName,
+      fileSize: fileSize,
+      mimeType: mimeType,
+      filePath: filePath,
+    );
+    await _insertMessage(message);
+    if (isGroupFile) {
+      await _updateGroupSnippet(
+        groupId: groupId!,
+        lastMessage: resolvedKind == MessageKind.voice
+            ? '🎤 Voice message'
+            : '📎 ${message.text}',
+        ts: message.ts,
+        unreadDelta: openConversationId == groupId ? 0 : 1,
+      );
+      return;
+    }
+    await _upsertConversation(
+      peerUserId: from,
+      peerName: senderName.isEmpty ? 'Campus user' : senderName,
+      lastMessage: resolvedKind == MessageKind.voice
+          ? '🎤 Voice message'
+          : '📎 ${message.text}',
+      ts: message.ts,
+      unreadDelta: openConversationId == from ? 0 : 1,
+    );
+  }
+
   Future<void> markDelivered(String packetId) async {
     await _db.update(
       'messages',
