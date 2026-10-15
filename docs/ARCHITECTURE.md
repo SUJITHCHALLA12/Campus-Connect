@@ -91,6 +91,26 @@ explicitly; the receiver detects `audio/*` mimes), and the chat renders
 a play/pause bubble with progress instead of a file tile. Group chats
 do not send voice yet — their composer shows the send button only.
 
+## Updates keep your data (v0.7.0+2)
+
+Two things make updates preserve everything:
+
+1. **Stable release signature.** CI signs every build with the same
+   release keystore (restored from the `KEYSTORE_BASE64` /
+   `KEYSTORE_PASSWORD` / `KEY_ALIAS` / `KEY_PASSWORD` Actions
+   secrets; local builds fall back to the debug key). Before this,
+   every CI run signed with a fresh debug key, so Android refused to
+   install the update over the old app and the only path was
+   uninstall → all chats wiped. One-time cost of switching: the first
+   stably-signed APK has a different signature from the old
+   debug-signed ones, so it needs one uninstall + reinstall; after
+   that, updates install over the old app and keep everything.
+   Never commit the keystore or `key.properties`.
+2. **Migrations, not wipes.** The app never deletes its database or
+   preferences on upgrade; sqflite `onUpgrade` migrates the schema
+   (v1 → v4) in place. Android Auto Backup (default on) also backs
+   up the database + preferences, so a reinstall restores them.
+
 ## Startup popups (v0.7)
 
 **Bluetooth.** Home boot requests the BLE permissions (scan /

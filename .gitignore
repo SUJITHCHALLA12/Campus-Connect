@@ -33,5 +33,6 @@ ios/
 # Secrets — never commit
 *.jks
 *.keystore
+key.properties
 google-services.json
 .env
