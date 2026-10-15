@@ -5,6 +5,7 @@ import 'app.dart';
 import 'ble/ble_transport.dart';
 import 'core/bootstrap.dart';
 import 'core/identity.dart';
+import 'core/theme/chat_theme_store.dart';
 import 'data/chat_repository.dart';
 
 Future<void> main() async {
@@ -16,10 +17,12 @@ Future<void> main() async {
   final identity = IdentityStore();
   final repository = ChatRepository();
   final ble = BleChatService(identity);
+  final chatThemes = ChatThemeStore();
   final bootstrap = AppBootstrap(
     identity: identity,
     repository: repository,
     ble: ble,
+    chatThemes: chatThemes,
   );
 
   runApp(
@@ -29,6 +32,7 @@ Future<void> main() async {
         ChangeNotifierProvider.value(value: repository),
         ChangeNotifierProvider.value(value: ble),
         ChangeNotifierProvider.value(value: bootstrap),
+        ChangeNotifierProvider.value(value: chatThemes),
       ],
       child: const CampusConnectApp(),
     ),
