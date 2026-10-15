@@ -31,6 +31,28 @@ jobs:
 
       - run: flutter pub get
 
+      # Stable release signing: restore the keystore from secrets so
+      # every build carries the SAME signature. Without this, each CI
+      # run signs with a fresh debug key, Android refuses to install
+      # the update over the old app, and the user must uninstall —
+      # wiping all chats. If the secrets are not set yet, the build
+      # falls back to debug signing with a warning (see build.gradle).
+      - name: Restore release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+            printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+              "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > key.properties
+            echo "Release keystore restored."
+          else
+            echo "WARNING: KEYSTORE_BASE64 not set — falling back to debug signing. Updates will NOT install over the old app."
+          fi
+
       - run: flutter build apk --release
 
       - name: Rename APK
@@ -41,7 +63,7 @@ jobs:
         with:
           tag: latest
           name: Latest APK build
-          body: Automated release build of the Campus Connect Android app (debug-signed, for personal test installs — not for Play Store distribution).
+          body: Automated release build of the Campus Connect Android app (release-signed with the stable key, for personal test installs — not for Play Store distribution). Updates install over the old app and keep all chats.
           allowUpdates: true
           replacesArtifacts: true
           makeLatest: true
