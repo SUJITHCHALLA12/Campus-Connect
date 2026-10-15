@@ -206,6 +206,16 @@ abstract final class FileStorage {
     required String fileName,
     required Uint8List bytes,
   }) async {
+    final target = File(await uniqueReceivedPath(fileName));
+    await target.writeAsBytes(bytes);
+    return target.path;
+  }
+
+  /// Returns a non-colliding path under the app documents `received/`
+  /// folder for [fileName] (creates the folder if needed). Used by
+  /// the fast-transfer paths, which already have the file on disk
+  /// and must not load it into memory just to save it.
+  static Future<String> uniqueReceivedPath(String fileName) async {
     final dir = await getApplicationDocumentsDirectory();
     final received = Directory('${dir.path}/received');
     if (!await received.exists()) {
@@ -221,8 +231,28 @@ abstract final class FileStorage {
       target = File('${received.path}/${stem}_$n$ext');
       n++;
     }
-    await target.writeAsBytes(bytes);
     return target.path;
+  }
+
+  /// Moves the file at [sourcePath] into `received/` under a unique
+  /// name (falls back to copy + delete across volumes). Returns the
+  /// destination path. Used by the fast-transfer receivers, which
+  /// get a file on disk from Nearby / Wi-Fi Direct.
+  static Future<String> saveIncomingPath({
+    required String sourcePath,
+    required String fileName,
+  }) async {
+    final dest = await uniqueReceivedPath(fileName);
+    final src = File(sourcePath);
+    try {
+      return (await src.rename(dest)).path;
+    } catch (_) {
+      await src.copy(dest);
+      try {
+        await src.delete();
+      } catch (_) {}
+      return dest;
+    }
   }
 
   /// Opens [path] with the platform's default app for its type.
