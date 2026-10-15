@@ -70,6 +70,9 @@ dropped.
 // msg — a chat message
 {"t":"msg","id":"<uuid>","from":"<userId>","name":"<display>","ts":123,"text":"hello"}
 
+// groupMsg — a message to a group chat (fan-out: one copy per member)
+{"t":"groupMsg","id":"<uuid>","from":"<userId>","name":"<display>","ts":123,"text":"hi all","gid":"<group uuid>","gname":"Study Group","members":{"<userId>":"<display>", "...": "..."}}}
+
 // ack — delivery acknowledgement for a msg id
 {"t":"ack","id":"<msg uuid>","from":"<userId>","name":"<display>","ts":123}
 
@@ -79,7 +82,8 @@ dropped.
 // fileStart — begins a file transfer (id = transfer id)
 {"t":"fileStart","id":"<transfer uuid>","from":"<userId>","name":"<display>","ts":123,"fileName":"photo.jpg","fileSize":184320,"mime":"image/jpeg"}
 
-// fileChunk — one chunk: base64 of up to 8 KB raw bytes
+// fileChunk — one chunk: base64 of up to 1 KB raw bytes (keeps the
+// packet under the 255-frame cap even at the MTU-23 minimum)
 {"t":"fileChunk","id":"<transfer uuid>","from":"<userId>","name":"<display>","ts":123,"seq":0,"data":"<base64>"}
 
 // fileEnd — ends a file transfer; receiver assembles + saves it
@@ -89,9 +93,13 @@ dropped.
 On receiving `msg`, the receiver stores it and replies `ack`. The sender
 marks the message delivered when the ack arrives.
 
+On receiving `groupMsg`, the receiver creates the group locally if it
+has never seen the id (from `gname` + `members`), stores the message,
+and replies `ack` like a normal message.
+
 File transfers reuse the same framing: each `fileChunk` packet is itself
-split into frames by the codec (an 8 KB chunk fits in ≤255 frames at the
-negotiated chunk size). The receiver collects chunks per transfer id;
+split into frames by the codec (a 1 KB chunk fits in ≤255 frames even at
+the MTU-23 minimum). The receiver collects chunks per transfer id;
 on `fileEnd` it verifies every chunk arrived and the total byte count
 matches `fileSize`, saves the file under the app documents `received/`
 folder, stores one file message, and replies `ack` with the transfer id
@@ -110,7 +118,7 @@ describe v1 as end-to-end encrypted — see `docs/ARCHITECTURE.md` milestones.
 ## Test checklist (two physical phones)
 
 1. Both phones: fresh install → enter different names → grant BT permissions.
-2. Both show each other under "Nearby phones" within ~10 s.
+2. Both show each other under "+ → Pair with nearby" within ~10 s.
 3. Exactly one side shows the link first; no duplicate conversations.
 4. Send messages both ways; each shows double-tick (delivered).
 5. Kill Bluetooth on one phone → other shows "Out of range"; sending fails

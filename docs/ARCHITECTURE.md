@@ -1,4 +1,4 @@
-# Campus Connect — Architecture (v0.1)
+# Campus Connect — Architecture (v0.4)
 
 ## Decision log
 
@@ -26,13 +26,18 @@ lib/
     ble_protocol.dart  UUIDs, adv name format, BlePacket, FrameCodec
     ble_transport.dart BleChatService: peripheral + central roles, links, routing
   data/
-    models.dart        ChatMessage, Conversation
-    database.dart      sqflite schema
-    chat_repository.dart persistence + unread + delivery states
+    models.dart        ChatMessage, Conversation, Group
+    database.dart      sqflite schema (v3: groups table)
+    chat_repository.dart persistence + unread + delivery states + groups
   ui/
     welcome_screen.dart   display-name entry (first run)
-    home_screen.dart      bottom tabs: Chats / Nearby / Settings
+    home_screen.dart      bottom nav: Home / Chats / Groups / Profile,
+                          centre + button (pair nearby / create group),
+                          Chats / Groups / Updates tabs
     chat_screen.dart      1:1 chat, ticks, out-of-range handling
+    group_chat_screen.dart group chat (fan-out send, sender names)
+    create_group_screen.dart group name + member picker
+    nearby_sheet.dart     bottom sheet: nearby phones to pair with
     widgets/              aurora_background, message_bubble,
                           glass_input_bar, radar_pulse
 ```
@@ -45,10 +50,10 @@ by design (Sujith's call, 2026-10-11).
 ## Startup flow (v0.3)
 
 `main()` creates the service instances, then `runApp` immediately —
-the splash screen (logo + loading spinner) is on screen while
-`AppBootstrap` opens the database and loads the identity. Once ready,
-the app routes to the welcome screen ("Dive in" — first run) or straight
-to chats. BLE starts when the home screen boots, as before.
+the splash screen (logo + animated gradient loading bar) is on screen
+while `AppBootstrap` opens the database and loads the identity. Once
+ready, the app routes to the welcome screen ("Dive in" — first run)
+or straight to chats. BLE starts when the home screen boots, as before.
 
 ## File sharing (v0.3)
 
@@ -61,6 +66,19 @@ folder, and the repository stores one file message pointing at the
 local copy. Tapping a file tile opens it with the platform viewer.
 DB schema is v2: `messages` gained `kind`, `file_name`, `file_size`,
 `mime_type`, `file_path` (v1 installs migrate via `ALTER TABLE`).
+
+## Group chats (v0.4)
+
+There is no group link — groups are fan-out over 1:1 links. The creator
+picks members (people chatted with or currently linked), and the
+repository stores the group in a `groups` table (id, name, member map,
+last message, unread). Sending a group message writes one `groupMsg`
+packet to each member over their 1:1 link; the first ack flips it to
+delivered. The packet carries the group id, name and full member map,
+so a receiver who has never seen the group creates it locally on first
+message. A member out of range when a message is sent simply misses
+that message — there is no server to hold it. DB schema is v3
+(`groups` table added; v1/v2 installs migrate via `CREATE TABLE`).
 
 ## Data flow (sending "hi")
 
