@@ -18,6 +18,7 @@ import '../core/theme/chat_theme_store.dart';
 import '../core/theme/chat_themes.dart';
 import '../data/chat_repository.dart';
 import '../data/models.dart';
+import '../transfer/fast_file_transfer.dart';
 import 'forward_screen.dart';
 import 'message_actions.dart';
 import 'widgets/aurora_background.dart';
@@ -150,8 +151,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  /// Picks an image or a file and sends it to the peer over BLE.
-  /// Files are capped at 1 MB (see [FileTransferConfig]).
+  /// Picks an image or a file and sends it to the peer (fast
+  /// transfer: Nearby → Wi-Fi Direct → BLE, 100 MB cap — see
+  /// [FastTransferConfig]).
   ///
   /// Path-only picking: the old code passed `withData: true`, which
   /// pushes up to 1 MB of bytes through the Android binder (a
@@ -195,9 +197,43 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       return;
     }
-    Uint8List bytes;
+    // The file is stat'ed + read inside _sendFileBytes (bytes are
+    // only loaded for the 1 MB BLE fallback).
+    await _sendFileBytes(
+      filePath: path,
+      fileName: picked.name,
+      mimeType: mimeForFileName(picked.name),
+      kind: MessageKind.file,
+    );
+  }
+
+  /// Sends a recorded voice note to the peer, as a voice message
+  /// (same file transfer, audio mime type).
+  Future<void> _sendVoice(File file) async {
+    await _sendFileBytes(
+      filePath: file.path,
+      fileName: 'voice.m4a',
+      mimeType: 'audio/m4a',
+      kind: MessageKind.voice,
+    );
+  }
+
+  /// Shared send path for picked files and voice notes.
+  ///
+  /// Routes through [FastFileTransferService]: Nearby Connections,
+  /// then Wi-Fi Direct, then BLE. Files over the 1 MB BLE cap are
+  /// never loaded into memory — the fast paths stream from disk and
+  /// the BLE fallback refuses them anyway.
+  Future<void> _sendFileBytes({
+    required String filePath,
+    required String fileName,
+    required String mimeType,
+    required MessageKind kind,
+  }) async {
+    final file = File(filePath);
+    int fileSize;
     try {
-      bytes = await File(path).readAsBytes();
+      fileSize = await file.length();
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -209,51 +245,37 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       return;
     }
-    await _sendFileBytes(
-      bytes: bytes,
-      fileName: picked.name,
-      mimeType: mimeForFileName(picked.name),
-      filePath: path,
-      kind: MessageKind.file,
-    );
-  }
-
-  /// Sends a recorded voice note to the peer over BLE, as a voice
-  /// message (same file transfer, audio mime type).
-  Future<void> _sendVoice(File file) async {
-    final bytes = await file.readAsBytes();
-    await _sendFileBytes(
-      bytes: bytes,
-      fileName: 'voice.m4a',
-      mimeType: 'audio/m4a',
-      filePath: file.path,
-      kind: MessageKind.voice,
-    );
-  }
-
-  /// Shared send path for picked files and voice notes.
-  Future<void> _sendFileBytes({
-    required Uint8List bytes,
-    required String fileName,
-    required String mimeType,
-    required String filePath,
-    required MessageKind kind,
-  }) async {
-    if (bytes.length > FileTransferConfig.maxFileSize) {
+    if (fileSize > FastTransferConfig.fastMaxFileSize) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('File too big — 1 MB max over Bluetooth.'),
+            content: Text('File too big — 100 MB max.'),
             duration: Duration(seconds: 2),
           ),
         );
       }
       return;
     }
+    // Bytes are only needed for the BLE fallback (1 MB cap).
+    Uint8List? bytes;
+    if (fileSize <= FileTransferConfig.maxFileSize) {
+      try {
+        bytes = await file.readAsBytes();
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not read that file.'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+    }
 
-    final identity = context.read<IdentityStore>();
-    final ble = context.read<BleChatService>();
     final repo = context.read<ChatRepository>();
+    final fast = context.read<FastFileTransferService>();
     final transferId = const Uuid().v4();
 
     await repo.saveOutgoingFile(
@@ -261,23 +283,25 @@ class _ChatScreenState extends State<ChatScreen> {
       peerName: widget.peerName,
       transferId: transferId,
       fileName: fileName,
-      fileSize: bytes.length,
+      fileSize: fileSize,
       mimeType: mimeType,
       filePath: filePath,
       ts: DateTime.now().millisecondsSinceEpoch,
       kind: kind,
     );
     try {
-      await FileTransferService.sendFile(
-        send: (packet) => ble.sendTo(widget.peerUserId, packet),
-        from: identity.userId,
-        name: identity.displayName,
-        transferId: transferId,
+      final ok = await fast.sendFile(
+        peerUserId: widget.peerUserId,
+        filePath: filePath,
         fileName: fileName,
-        bytes: bytes,
         mimeType: mimeType,
+        transferId: transferId,
+        fileSize: fileSize,
+        bytes: bytes,
+        kind: kind,
         onProgress: (p) => repo.updateFileProgress(transferId, p),
       );
+      if (!ok) throw StateError('Fast transfer failed');
       await repo.markDelivered(transferId);
     } catch (_) {
       await repo.markFailed(transferId);
@@ -620,31 +644,76 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       return;
     }
-    final bytes = await File(path).readAsBytes();
     final peerUserId = target.peerUserId!;
     final transferId = const Uuid().v4();
+    final file = File(path);
+    int fileSize;
+    try {
+      fileSize = await file.length();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('File is not available to forward.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+    if (fileSize > FastTransferConfig.fastMaxFileSize) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('File too big — 100 MB max.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+    // Bytes are only needed for the BLE fallback (1 MB cap).
+    Uint8List? bytes;
+    if (fileSize <= FileTransferConfig.maxFileSize) {
+      try {
+        bytes = await file.readAsBytes();
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('File is not available to forward.'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+    }
+    final fast = context.read<FastFileTransferService>();
     await repo.saveOutgoingFile(
       peerUserId: peerUserId,
       peerName: target.peerName ?? 'Chat',
       transferId: transferId,
       fileName: message.fileName ?? message.text,
-      fileSize: bytes.length,
+      fileSize: fileSize,
       mimeType: message.mimeType ?? 'application/octet-stream',
       filePath: path,
       ts: DateTime.now().millisecondsSinceEpoch,
       kind: message.kind,
     );
     try {
-      await FileTransferService.sendFile(
-        send: (packet) => ble.sendTo(peerUserId, packet),
-        from: identity.userId,
-        name: identity.displayName,
-        transferId: transferId,
+      final ok = await fast.sendFile(
+        peerUserId: peerUserId,
+        filePath: path,
         fileName: message.fileName ?? message.text,
-        bytes: bytes,
         mimeType: message.mimeType ?? 'application/octet-stream',
+        transferId: transferId,
+        fileSize: fileSize,
+        bytes: bytes,
+        kind: message.kind,
         onProgress: (p) => repo.updateFileProgress(transferId, p),
       );
+      if (!ok) throw StateError('Fast transfer failed');
       await repo.markDelivered(transferId);
     } catch (_) {
       await repo.markFailed(transferId);

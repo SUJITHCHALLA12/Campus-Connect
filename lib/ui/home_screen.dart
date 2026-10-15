@@ -19,6 +19,7 @@ import '../core/identity.dart';
 import '../data/chat_repository.dart';
 import '../data/models.dart';
 import '../services/update_checker.dart';
+import '../transfer/fast_file_transfer.dart';
 import 'chat_screen.dart';
 import 'create_group_screen.dart';
 import 'group_chat_screen.dart';
@@ -119,6 +120,12 @@ class _HomeScreenState extends State<HomeScreen>
     try {
       await context.read<BleChatService>().start();
       _bleStarted = true;
+      // Fast file transfer (Nearby + Wi-Fi Direct receivers) starts
+      // alongside BLE. Best effort: a failure here must never break
+      // chat — file sending falls back to BLE on its own.
+      try {
+        await context.read<FastFileTransferService>().start();
+      } catch (_) {}
       if (mounted) {
         setState(() {
           _starting = false;

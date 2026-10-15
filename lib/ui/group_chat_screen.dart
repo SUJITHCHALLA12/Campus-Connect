@@ -15,6 +15,7 @@ import '../core/constants.dart';
 import '../core/identity.dart';
 import '../data/chat_repository.dart';
 import '../data/models.dart';
+import '../transfer/fast_file_transfer.dart';
 import 'forward_screen.dart';
 import 'group_info_screen.dart';
 import 'message_actions.dart';
@@ -704,9 +705,30 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       }
       return;
     }
-    Uint8List bytes;
+    // The file is stat'ed + read inside _sendFileBytes (bytes are
+    // only loaded for the 1 MB BLE fallback).
+    await _sendFileBytes(
+      filePath: path,
+      fileName: picked.name,
+      mimeType: mimeForFileName(picked.name),
+    );
+  }
+
+  /// Fans one file transfer out to every member. One outgoing file
+  /// message is stored in the group conversation; members who are out
+  /// of range simply miss the file (same as group text).
+  ///
+  /// Each member gets the fast path (Nearby → Wi-Fi Direct → BLE),
+  /// same as 1:1 files — see [FastFileTransferService].
+  Future<void> _sendFileBytes({
+    required String filePath,
+    required String fileName,
+    required String mimeType,
+  }) async {
+    final file = File(filePath);
+    int fileSize;
     try {
-      bytes = await File(path).readAsBytes();
+      fileSize = await file.length();
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -718,38 +740,37 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       }
       return;
     }
-    await _sendFileBytes(
-      bytes: bytes,
-      fileName: picked.name,
-      mimeType: mimeForFileName(picked.name),
-      filePath: path,
-    );
-  }
-
-  /// Fans one file transfer out to every member. One outgoing file
-  /// message is stored in the group conversation; members who are out
-  /// of range simply miss the file (same as group text).
-  Future<void> _sendFileBytes({
-    required Uint8List bytes,
-    required String fileName,
-    required String mimeType,
-    required String filePath,
-  }) async {
-    if (bytes.length > FileTransferConfig.maxFileSize) {
+    if (fileSize > FastTransferConfig.fastMaxFileSize) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('File too big — 1 MB max over Bluetooth.'),
+            content: Text('File too big — 100 MB max.'),
             duration: Duration(seconds: 2),
           ),
         );
       }
       return;
     }
+    // Bytes are only needed for the BLE fallback (1 MB cap).
+    Uint8List? bytes;
+    if (fileSize <= FileTransferConfig.maxFileSize) {
+      try {
+        bytes = await file.readAsBytes();
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Could not read that file.'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+        return;
+      }
+    }
 
-    final identity = context.read<IdentityStore>();
-    final ble = context.read<BleChatService>();
     final repo = context.read<ChatRepository>();
+    final fast = context.read<FastFileTransferService>();
     final group = _currentGroup();
     final transferId = const Uuid().v4();
 
@@ -757,7 +778,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
       group: group,
       transferId: transferId,
       fileName: fileName,
-      fileSize: bytes.length,
+      fileSize: fileSize,
       mimeType: mimeType,
       filePath: filePath,
       ts: DateTime.now().millisecondsSinceEpoch,
@@ -765,18 +786,18 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     var delivered = 0;
     for (final memberId in group.members.keys) {
       try {
-        await FileTransferService.sendFile(
-          send: (packet) => ble.sendTo(memberId, packet),
-          from: identity.userId,
-          name: identity.displayName,
-          transferId: transferId,
+        final ok = await fast.sendFile(
+          peerUserId: memberId,
+          filePath: filePath,
           fileName: fileName,
-          bytes: bytes,
           mimeType: mimeType,
+          transferId: transferId,
+          fileSize: fileSize,
+          bytes: bytes,
           groupId: group.id,
           onProgress: (p) => repo.updateFileProgress(transferId, p),
         );
-        delivered++;
+        if (ok) delivered++;
       } catch (_) {
         // This member missed the file; the others still get it.
       }
