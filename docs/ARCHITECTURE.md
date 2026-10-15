@@ -19,7 +19,8 @@ lib/
   app.dart             MaterialApp + aquatic "liquid glass" theme
   core/
     constants.dart     app name, timings (visual tokens in theme/)
-    theme/             cc_colors.dart, cc_glass.dart — design system
+    theme/             cc_colors.dart, cc_glass.dart — design system,
+                       chat_themes.dart + chat_theme_store.dart (per-chat themes)
     identity.dart      userId (uuid v4) + display name, SharedPreferences
     format.dart        chat time formatters
   ble/
@@ -34,8 +35,11 @@ lib/
     home_screen.dart      bottom nav: Home / Chats / Groups / Profile,
                           centre + button (pair nearby / create group),
                           Chats / Groups / Updates tabs
-    chat_screen.dart      1:1 chat, ticks, out-of-range handling
-    group_chat_screen.dart group chat (fan-out send, sender names)
+    chat_screen.dart      1:1 chat, ticks, out-of-range handling,
+                          per-chat theme picker
+    group_chat_screen.dart group chat (fan-out send, sender names,
+                          group files, owner-only composer lock)
+    group_info_screen.dart group photo, owner, members, permissions
     create_group_screen.dart group name + member picker
     nearby_sheet.dart     bottom sheet: nearby phones to pair with
     widgets/              aurora_background, message_bubble,
@@ -132,7 +136,7 @@ Two things make updates preserve everything:
    Never commit the keystore or `key.properties`.
 2. **Migrations, not wipes.** The app never deletes its database or
    preferences on upgrade; sqflite `onUpgrade` migrates the schema
-   (v1 → v4) in place. Android Auto Backup (default on) also backs
+   (v1 → v5) in place. Android Auto Backup (default on) also backs
    up the database + preferences, so a reinstall restores them.
 
 ## Startup popups (v0.7)
@@ -174,6 +178,48 @@ Forward sends a copy with the forwarded flag (text to any chat;
 files/voice to 1:1 chats only). DB schema is v4: `messages` gained
 `edited`, `reactions`, `reply_to_id`, `reply_to_text`,
 `reply_to_sender`, `forwarded`.
+
+## Per-chat themes, group owner + group photo (v0.9)
+
+**Per-chat themes.** Each 1:1 chat has its own theme (Ocean, Sunset,
+Forest, Grape, Rose, Mono — background tint + own-bubble gradient),
+picked from the palette button in the chat app bar and stored in
+`SharedPreferences` keyed by peer user id (`ChatThemeStore`). The app
+theme is untouched; group chats always use the default Ocean theme.
+
+**Group owner + group permissions.** The group creator is the
+owner (`groups.owner_id`, set at creation). The Group Info screen
+(reached from the group chat header) shows the photo, name, owner and
+member list, and a Group Permissions section: Send messages, Edit
+group info, Add members — each Everyone / Only owner. Only the owner
+sees and changes the toggles; non-owners see the current permissions
+read-only. Toggling updates the local row, then fans a `groupUpdate`
+packet (gid, owner, permSend, permEdit, permAdd) to all members;
+receivers apply it only when the sender IS the owner. Every
+`groupMsg` also carries owner + the permission set so a phone
+learning the group from a first message gets the right settings.
+When send is owner-only, non-owner members see the composer disabled
+with a notice; the owner can still send. Edit-info gates the group
+photo edit (there is no rename UI yet, so the name half gates
+nothing for now). Add-members has no flow yet, so that flag syncs
+and will gate the flow when it is built. Groups created before v0.9
+have no owner and are never restricted. DB schema is v5 (`groups`
+gained `owner_id`, `perm_send`, `perm_edit`, `perm_add`,
+`photo_path`).
+
+**Group photo.** Group Info offers Choose / Change / Remove; the
+picked image is copied to app documents as
+`group_photo_<groupId>.jpg` and its path stored on the group row.
+Local-only, like the profile photo — peers keep the default avatar.
+Shown in the group header, Group Info, and the groups list.
+
+**Group file sharing fixed.** The group composer never passed attach
+callbacks, so the file button did not even render in group chats;
+the 1:1 picker additionally swallowed unusable picks silently and
+pushed bytes through the binder with `withData: true`. Group files
+now fan out one transfer per member; file packets carry `gid` so the
+receiver stores the file in the group conversation, not the 1:1 chat.
+See `docs/PROTOCOL.md`.
 
 ## Data flow (sending "hi")
 

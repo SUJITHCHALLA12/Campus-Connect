@@ -70,8 +70,14 @@ dropped.
 // msg — a chat message
 {"t":"msg","id":"<uuid>","from":"<userId>","name":"<display>","ts":123,"text":"hello"}
 
-// groupMsg — a message to a group chat (fan-out: one copy per member)
-{"t":"groupMsg","id":"<uuid>","from":"<userId>","name":"<display>","ts":123,"text":"hi all","gid":"<group uuid>","gname":"Study Group","members":{"<userId>":"<display>", "...": "..."}}}
+// groupMsg — a message to a group chat (fan-out: one copy per member).
+// owner + perms ride along so a receiver learning the group from this
+// message gets the correct owner and permission set.
+{"t":"groupMsg","id":"<uuid>","from":"<userId>","name":"<display>","ts":123,"text":"hi all","gid":"<group uuid>","gname":"Study Group","members":{"<userId>":"<display>", "...": "..."},"owner":"<owner userId>","permSend":false,"permEdit":false,"permAdd":false}
+
+// groupUpdate — group permissions changed by the owner. Receivers
+// apply it only when from == owner.
+{"t":"groupUpdate","id":"<uuid>","from":"<userId>","name":"<display>","ts":123,"gid":"<group uuid>","owner":"<owner userId>","permSend":true,"permEdit":false,"permAdd":false}
 
 // ack — delivery acknowledgement for a msg id
 {"t":"ack","id":"<msg uuid>","from":"<userId>","name":"<display>","ts":123}
@@ -79,15 +85,16 @@ dropped.
 // bye — graceful teardown notice (optional)
 {"t":"bye","id":"<uuid>","from":"<userId>","name":"<display>","ts":123}
 
-// fileStart — begins a file transfer (id = transfer id)
-{"t":"fileStart","id":"<transfer uuid>","from":"<userId>","name":"<display>","ts":123,"fileName":"photo.jpg","fileSize":184320,"mime":"image/jpeg"}
+// fileStart — begins a file transfer (id = transfer id).
+// gid set → the file belongs to that group chat, not a 1:1 chat.
+{"t":"fileStart","id":"<transfer uuid>","from":"<userId>","name":"<display>","ts":123,"fileName":"photo.jpg","fileSize":184320,"mime":"image/jpeg","gid":"<group uuid, if group>"}
 
 // fileChunk — one chunk: base64 of up to 1 KB raw bytes (keeps the
 // packet under the 255-frame cap even at the MTU-23 minimum)
-{"t":"fileChunk","id":"<transfer uuid>","from":"<userId>","name":"<display>","ts":123,"seq":0,"data":"<base64>"}
+{"t":"fileChunk","id":"<transfer uuid>","from":"<userId>","name":"<display>","ts":123,"seq":0,"data":"<base64>","gid":"<group uuid, if group>"}
 
 // fileEnd — ends a file transfer; receiver assembles + saves it
-{"t":"fileEnd","id":"<transfer uuid>","from":"<userId>","name":"<display>","ts":123}
+{"t":"fileEnd","id":"<transfer uuid>","from":"<userId>","name":"<display>","ts":123,"gid":"<group uuid, if group>"}
 ```
 
 On receiving `msg`, the receiver stores it and replies `ack`. The sender
@@ -95,7 +102,28 @@ marks the message delivered when the ack arrives.
 
 On receiving `groupMsg`, the receiver creates the group locally if it
 has never seen the id (from `gname` + `members`), stores the message,
-and replies `ack` like a normal message.
+and replies `ack` like a normal message. `owner` / `permSend` /
+`permEdit` / `permAdd` ride on every `groupMsg`: a new group takes
+them outright; a known group only accepts them when the sender IS the
+owner.
+
+On receiving `groupUpdate`, the receiver applies the new permission
+set only when `from` equals `owner` — a non-owner cannot spoof a
+permissions change — and replies `ack`.
+
+### Group permissions (v0.9)
+
+Each permission is Everyone (false) or Only owner (true), defaulting
+to Everyone for backward compatibility with existing groups:
+
+| Key | Permission | Enforcement |
+|---|---|---|
+| `permSend` | Send messages | Composer disabled + notice for non-owners when true |
+| `permEdit` | Edit group info (name / photo) | Photo edit hidden/disabled for non-owners when true (no rename UI exists yet) |
+| `permAdd` | Add members | No add-members flow exists yet — the flag syncs and will gate that flow when it is built |
+
+Only the group owner (the creator, `owner`) can change permissions.
+Groups created before v0.9 have no owner and are never restricted.
 
 // edit — replaces the text of a message the sender authored
 {"t":"edit","id":"<uuid>","from":"<userId>","name":"<display>","ts":123,"text":"fixed","editId":"<edited msg uuid>","gid":"<group uuid, if group>"}
@@ -120,6 +148,9 @@ with the transfer id so the sender marks its file message delivered. Incomplete 
 transfers are dropped silently. Files are capped at 1 MB — BLE
 throughput is low (each frame is a separate GATT write), so bigger files
 are refused on the sender side before any byte goes over the air.
+When `gid` is set on the file packets, the file is stored in that
+group conversation instead of the 1:1 chat with the sender (group
+files fan out: the sender runs one transfer per member).
 
 ## Security status (v1)
 
@@ -141,3 +172,16 @@ describe v1 as end-to-end encrypted — see `docs/ARCHITECTURE.md` milestones.
 8. Send a small image (< 1 MB) → receiver gets a file tile, taps it,
    and the image opens in the platform viewer.
 9. Send a > 1 MB file → sender sees the "1 MB max" notice, nothing sent.
+10. Group photo: set a photo in Group Info → it shows in the group
+    header and groups list on this phone only; the other phone still
+    sees the default avatar (photos are not transmitted).
+11. Owner-only messaging: owner flips the Send-messages permission
+    in Group Info → members see the composer disabled with the
+    notice; the owner can still send. A member's send attempt is
+    blocked locally.
+12. Group permissions: the owner can set Send / Edit info / Add
+    members to Everyone or Only owner; non-owners see the settings
+    read-only. Edit-info gates the group photo (no rename UI yet);
+    Add-members has no flow to gate yet.
+13. Group file: send a file from a group chat → every in-range member
+    gets it in the group conversation (not in the 1:1 chat).
