@@ -477,6 +477,16 @@ class BleChatService extends ChangeNotifier {
       case 'fileEnd':
         unawaited(_finishIncomingFile(link, packet));
         break;
+      case 'groupMsg':
+        _incoming.add(packet);
+        unawaited(_writeToLink(
+            link,
+            BlePacket.ack(
+              forId: packet.id,
+              from: identity.userId,
+              name: identity.displayName,
+            )));
+        break;
     }
     notifyListeners();
   }

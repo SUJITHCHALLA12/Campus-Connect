@@ -24,7 +24,11 @@ abstract final class FileTransferConfig {
   static const int maxFileSize = 1024 * 1024;
 
   /// Raw bytes per `fileChunk` packet.
-  static const int chunkBytes = 8 * 1024;
+  /// Max raw bytes per fileChunk packet. 1 KB keeps the base64 JSON
+  /// packet (~1.5 KB) under the framing cap of 255 frames even at the
+  /// MTU-23 minimum (8 payload bytes/frame → 255 × 8 = 2040 bytes).
+  /// Larger chunks would silently truncate on low-MTU links.
+  static const int chunkBytes = 1024;
 }
 
 /// Sends a packet over the BLE link. Implemented by the chat screen as

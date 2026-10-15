@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:uuid/uuid.dart';
 
 import '../ble/ble_protocol.dart';
 import '../ble/ble_transport.dart';
@@ -22,6 +23,9 @@ class ChatRepository extends ChangeNotifier {
 
   List<Conversation> _conversations = [];
   List<Conversation> get conversations => _conversations;
+
+  List<Group> _groups = [];
+  List<Group> get groups => _groups;
 
   final Map<String, List<ChatMessage>> _messageCache = {};
 
@@ -46,6 +50,7 @@ class ChatRepository extends ChangeNotifier {
   Future<void> init(Database db) async {
     _db = db;
     await _reloadConversations();
+    await _reloadGroups();
   }
 
   void bind(BleChatService ble, IdentityStore identity) {
@@ -62,6 +67,9 @@ class ChatRepository extends ChangeNotifier {
         case 'file':
           await saveIncomingFile(packet);
           break;
+        case 'groupMsg':
+          await saveIncomingGroupMsg(packet);
+          break;
       }
     });
   }
@@ -73,6 +81,130 @@ class ChatRepository extends ChangeNotifier {
     );
     _conversations = rows.map(Conversation.fromMap).toList();
     notifyListeners();
+  }
+
+  Future<void> _reloadGroups() async {
+    final rows = await _db.query(
+      'groups',
+      orderBy: 'last_ts DESC',
+    );
+    _groups = rows.map(Group.fromMap).toList();
+    notifyListeners();
+  }
+
+  /// Creates a group with [memberIds] → display names (excluding self).
+  /// Returns the stored group.
+  Future<Group> createGroup({
+    required String name,
+    required Map<String, String> members,
+  }) async {
+    final group = Group(
+      id: const Uuid().v4(),
+      name: name,
+      members: members,
+      lastTs: DateTime.now().millisecondsSinceEpoch,
+      unread: 0,
+    );
+    await _db.insert('groups', group.toMap());
+    await _reloadGroups();
+    return group;
+  }
+
+  Group? groupById(String groupId) {
+    for (final g in _groups) {
+      if (g.id == groupId) return g;
+    }
+    return null;
+  }
+
+  Future<void> _updateGroupSnippet({
+    required String groupId,
+    required String lastMessage,
+    required int ts,
+    required int unreadDelta,
+  }) async {
+    await _db.rawUpdate(
+      '''
+      UPDATE groups
+      SET last_message = ?, last_ts = ?, unread = unread + ?
+      WHERE group_id = ?
+      ''',
+      [lastMessage, ts, unreadDelta, groupId],
+    );
+    await _reloadGroups();
+  }
+
+  /// Stores an outgoing group message as `sent`. The chat screen fans
+  /// the packet out to each member and flips it to delivered / failed.
+  Future<void> saveOutgoingGroupMsg({
+    required Group group,
+    required BlePacket packet,
+  }) async {
+    final message = ChatMessage(
+      id: packet.id,
+      conversationId: group.id,
+      senderId: _identity!.userId,
+      text: packet.text ?? '',
+      ts: packet.ts,
+      direction: MessageDirection.outgoing,
+      status: MessageStatus.sent,
+    );
+    await _insertMessage(message);
+    await _updateGroupSnippet(
+      groupId: group.id,
+      lastMessage: message.text,
+      ts: message.ts,
+      unreadDelta: 0,
+    );
+  }
+
+  /// Stores a received group message, creating the group first when
+  /// this phone has never seen it (name + members ride in the packet).
+  Future<void> saveIncomingGroupMsg(BlePacket packet) async {
+    final groupId = packet.groupId;
+    if (groupId == null) return;
+    var group = groupById(groupId);
+    if (group == null) {
+      final members = Map<String, String>.from(packet.members ?? {});
+      members.remove(_identity!.userId);
+      group = Group(
+        id: groupId,
+        name: packet.groupName ?? 'Group chat',
+        members: members,
+        lastTs: packet.ts,
+        unread: 0,
+      );
+      await _db.insert('groups', group.toMap());
+      await _reloadGroups();
+    }
+    final message = ChatMessage(
+      id: packet.id,
+      conversationId: groupId,
+      senderId: packet.from,
+      text: packet.text ?? '',
+      ts: packet.ts,
+      direction: MessageDirection.incoming,
+      status: MessageStatus.delivered,
+    );
+    await _insertMessage(message);
+    await _updateGroupSnippet(
+      groupId: groupId,
+      lastMessage: message.text,
+      ts: message.ts,
+      unreadDelta: openConversationId == groupId ? 0 : 1,
+    );
+  }
+
+  /// Marks a group as read and records it as the open conversation.
+  Future<void> markGroupOpen(String groupId) async {
+    openConversationId = groupId;
+    await _db.update(
+      'groups',
+      {'unread': 0},
+      where: 'group_id = ?',
+      whereArgs: [groupId],
+    );
+    await _reloadGroups();
   }
 
   Future<List<ChatMessage>> messagesFor(String peerUserId) async {

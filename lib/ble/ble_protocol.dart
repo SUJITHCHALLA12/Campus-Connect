@@ -75,6 +75,8 @@ abstract final class BleProtocol {
 ///   * fileEnd — ends a file transfer; the receiver assembles + saves it
 ///   * file  — synthetic packet the transport emits to the repository
 ///             once an incoming file is saved (carries the local path)
+///   * groupMsg — a message to a group chat (carries group id, name and
+///             the member map so a receiver can create the group)
 class BlePacket {
   final String type;
   final String id;
@@ -89,6 +91,9 @@ class BlePacket {
   final String? filePath;
   final int? seq;
   final String? data;
+  final String? groupId;
+  final String? groupName;
+  final Map<String, String>? members;
 
   BlePacket({
     required this.type,
@@ -104,6 +109,9 @@ class BlePacket {
     this.filePath,
     this.seq,
     this.data,
+    this.groupId,
+    this.groupName,
+    this.members,
   });
 
   factory BlePacket.hello({
@@ -226,6 +234,30 @@ class BlePacket {
         filePath: filePath,
       );
 
+  /// A message to a group chat. [members] maps every member's user id
+  /// to their display name so a receiver who has never seen this group
+  /// can create it locally. The sender fans the packet out to each
+  /// member over their 1:1 BLE link.
+  factory BlePacket.groupMsg({
+    required String from,
+    required String name,
+    required String text,
+    required String groupId,
+    required String groupName,
+    required Map<String, String> members,
+  }) =>
+      BlePacket(
+        type: 'groupMsg',
+        id: const Uuid().v4(),
+        from: from,
+        name: name,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        text: text,
+        groupId: groupId,
+        groupName: groupName,
+        members: members,
+      );
+
   Map<String, dynamic> toJson() => {
         't': type,
         'id': id,
@@ -240,6 +272,9 @@ class BlePacket {
         if (filePath != null) 'path': filePath,
         if (seq != null) 'seq': seq,
         if (data != null) 'data': data,
+        if (groupId != null) 'gid': groupId,
+        if (groupName != null) 'gname': groupName,
+        if (members != null) 'members': members,
       };
 
   factory BlePacket.fromJson(Map<String, dynamic> json) => BlePacket(
@@ -256,6 +291,11 @@ class BlePacket {
         filePath: json['path'] as String?,
         seq: (json['seq'] as num?)?.toInt(),
         data: json['data'] as String?,
+        groupId: json['gid'] as String?,
+        groupName: json['gname'] as String?,
+        members: (json['members'] as Map?)?.map(
+          (k, v) => MapEntry(k.toString(), v.toString()),
+        ),
       );
 
   Uint8List encode() => Uint8List.fromList(utf8.encode(jsonEncode(toJson())));

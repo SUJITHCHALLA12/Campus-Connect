@@ -8,7 +8,7 @@ class AppDatabase {
     final dir = await getDatabasesPath();
     return openDatabase(
       p.join(dir, 'campus_connect.db'),
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE conversations(
@@ -38,6 +38,16 @@ class AppDatabase {
         ''');
         await db.execute(
             'CREATE INDEX idx_messages_conv ON messages(conversation_id, ts)');
+        await db.execute('''
+          CREATE TABLE groups(
+            group_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            members TEXT NOT NULL DEFAULT '{}',
+            last_message TEXT,
+            last_ts INTEGER NOT NULL DEFAULT 0,
+            unread INTEGER NOT NULL DEFAULT 0
+          )
+        ''');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -49,6 +59,19 @@ class AppDatabase {
           await db.execute('ALTER TABLE messages ADD COLUMN file_size INTEGER');
           await db.execute('ALTER TABLE messages ADD COLUMN mime_type TEXT');
           await db.execute('ALTER TABLE messages ADD COLUMN file_path TEXT');
+        }
+        if (oldVersion < 3) {
+          // v3: group chats.
+          await db.execute('''
+            CREATE TABLE groups(
+              group_id TEXT PRIMARY KEY,
+              name TEXT NOT NULL,
+              members TEXT NOT NULL DEFAULT '{}',
+              last_message TEXT,
+              last_ts INTEGER NOT NULL DEFAULT 0,
+              unread INTEGER NOT NULL DEFAULT 0
+            )
+          ''');
         }
       },
     );

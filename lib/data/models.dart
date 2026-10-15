@@ -1,5 +1,6 @@
 /// Plain data models for the chat layer. Persistence lives in
 /// [AppDatabase]/[ChatRepository]; the BLE layer never touches these.
+import 'dart:convert';
 enum MessageDirection { outgoing, incoming }
 
 enum MessageStatus {
@@ -91,8 +92,60 @@ class ChatMessage {
       );
 }
 
-class Conversation {
-  final String peerUserId;
+/// A group chat: one shared conversation across several phones.
+///
+/// Group messages travel as fan-out: the sender writes the same
+/// `groupMsg` packet to each member over their 1:1 BLE link. [members]
+/// maps every member's user id to their display name (excluding self);
+/// it arrives inside `groupMsg` packets so a receiver who has never
+/// seen the group can create it locally.
+class Group {
+  final String id;
+  final String name;
+  final Map<String, String> members;
+  final String? lastMessage;
+  final int lastTs;
+  final int unread;
+
+  Group({
+    required this.id,
+    required this.name,
+    required this.members,
+    this.lastMessage,
+    required this.lastTs,
+    required this.unread,
+  });
+
+  Map<String, Object?> toMap() => {
+        'group_id': id,
+        'name': name,
+        'members': jsonEncode(members),
+        'last_message': lastMessage,
+        'last_ts': lastTs,
+        'unread': unread,
+      };
+
+  factory Group.fromMap(Map<String, Object?> m) {
+    final raw = m['members'];
+    final decoded =
+        raw == null ? <String, dynamic>{} : jsonDecode(raw as String);
+    return Group(
+      id: m['group_id'] as String,
+      name: m['name'] as String,
+      members: (decoded as Map)
+          .map((k, v) => MapEntry(k.toString(), v.toString())),
+      lastMessage: m['last_message'] as String?,
+      lastTs: (m['last_ts'] as num).toInt(),
+      unread: (m['unread'] as num).toInt(),
+    );
+  }
+
+  /// Display names of everyone in the group, including self handled by
+  /// the caller (self is not stored in [members]).
+  List<String> get memberNames => members.values.toList();
+}
+
+class Conversation {  final String peerUserId;
   final String peerName;
   final String? lastMessage;
   final int lastTs;
