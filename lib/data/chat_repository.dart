@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
@@ -69,6 +70,15 @@ class ChatRepository extends ChangeNotifier {
           break;
         case 'groupMsg':
           await saveIncomingGroupMsg(packet);
+          break;
+        case 'edit':
+          await applyRemoteEdit(packet);
+          break;
+        case 'delete':
+          await applyRemoteDelete(packet);
+          break;
+        case 'react':
+          await applyRemoteReaction(packet);
           break;
       }
     });
@@ -148,6 +158,10 @@ class ChatRepository extends ChangeNotifier {
       ts: packet.ts,
       direction: MessageDirection.outgoing,
       status: MessageStatus.sent,
+      replyToId: packet.replyToId,
+      replyToText: packet.replyToText,
+      replyToSender: packet.replyToSender,
+      forwarded: packet.forwarded,
     );
     await _insertMessage(message);
     await _updateGroupSnippet(
@@ -185,6 +199,10 @@ class ChatRepository extends ChangeNotifier {
       ts: packet.ts,
       direction: MessageDirection.incoming,
       status: MessageStatus.delivered,
+      replyToId: packet.replyToId,
+      replyToText: packet.replyToText,
+      replyToSender: packet.replyToSender,
+      forwarded: packet.forwarded,
     );
     await _insertMessage(message);
     await _updateGroupSnippet(
@@ -205,6 +223,151 @@ class ChatRepository extends ChangeNotifier {
       whereArgs: [groupId],
     );
     await _reloadGroups();
+  }
+
+  // ─── Message actions: edit / delete / react ───────────────────
+
+  Future<ChatMessage?> messageById(String id) async {
+    final rows = await _db.query(
+      'messages',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return ChatMessage.fromMap(rows.first);
+  }
+
+  /// Edits the text of a message this phone authored. The caller
+  /// enforces the 5-minute window; the receiver enforces authorship.
+  Future<void> updateMessageText(String id, String newText) async {
+    await _db.update(
+      'messages',
+      {'text': newText, 'edited': 1},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+    final message = await messageById(id);
+    if (message != null) {
+      await _refreshSnippet(message.conversationId);
+    }
+    notifyListeners();
+  }
+
+  /// Deletes a message from this phone only ("Delete for me").
+  Future<void> deleteMessageLocal(String id) async {
+    final message = await messageById(id);
+    await _db.delete('messages', where: 'id = ?', whereArgs: [id]);
+    if (message != null) {
+      await _refreshSnippet(message.conversationId);
+    }
+    notifyListeners();
+  }
+
+  /// Applies an incoming edit: only the original author may edit, and
+  /// only text messages are editable.
+  Future<void> applyRemoteEdit(BlePacket packet) async {
+    final editId = packet.editId;
+    if (editId == null || packet.text == null) return;
+    final message = await messageById(editId);
+    if (message == null) return;
+    if (message.senderId != packet.from) return; // not the author
+    if (message.kind != MessageKind.text) return;
+    await _db.update(
+      'messages',
+      {'text': packet.text, 'edited': 1},
+      where: 'id = ?',
+      whereArgs: [editId],
+    );
+    await _refreshSnippet(message.conversationId);
+    notifyListeners();
+  }
+
+  /// Applies an incoming delete-for-everyone: only the original
+  /// author may delete.
+  Future<void> applyRemoteDelete(BlePacket packet) async {
+    final deleteId = packet.deleteId;
+    if (deleteId == null) return;
+    final message = await messageById(deleteId);
+    if (message == null) return;
+    if (message.senderId != packet.from) return; // not the author
+    await _db.delete('messages', where: 'id = ?', whereArgs: [deleteId]);
+    await _refreshSnippet(message.conversationId);
+    notifyListeners();
+  }
+
+  /// Toggles [senderId]'s reaction on a message: same emoji again
+  /// removes it, a different emoji replaces it.
+  Future<void> toggleReaction(
+      String messageId, String senderId, String emoji) async {
+    final message = await messageById(messageId);
+    if (message == null) return;
+    final reactions = Map<String, String>.from(message.reactions);
+    if (reactions[senderId] == emoji) {
+      reactions.remove(senderId);
+    } else {
+      reactions[senderId] = emoji;
+    }
+    await _db.update(
+      'messages',
+      {'reactions': jsonEncode(reactions)},
+      where: 'id = ?',
+      whereArgs: [messageId],
+    );
+    notifyListeners();
+  }
+
+  /// Applies an incoming reaction.
+  Future<void> applyRemoteReaction(BlePacket packet) async {
+    final reactId = packet.reactId;
+    final emoji = packet.reactEmoji;
+    if (reactId == null || emoji == null) return;
+    await toggleReaction(reactId, packet.from, emoji);
+  }
+
+  /// Recomputes a conversation/group list snippet from its latest
+  /// remaining message (used after edits and deletes).
+  Future<void> _refreshSnippet(String conversationId) async {
+    final rows = await _db.query(
+      'messages',
+      where: 'conversation_id = ?',
+      whereArgs: [conversationId],
+      orderBy: 'ts DESC',
+      limit: 1,
+    );
+    final snippet =
+        rows.isEmpty ? null : _snippetFor(ChatMessage.fromMap(rows.first));
+    final ts = rows.isEmpty
+        ? 0
+        : (rows.first['ts'] as num).toInt();
+    if (groupById(conversationId) != null) {
+      await _db.update(
+        'groups',
+        {'last_message': snippet, 'last_ts': ts},
+        where: 'group_id = ?',
+        whereArgs: [conversationId],
+      );
+      await _reloadGroups();
+    } else {
+      await _db.update(
+        'conversations',
+        {'last_message': snippet, 'last_ts': ts},
+        where: 'peer_user_id = ?',
+        whereArgs: [conversationId],
+      );
+      await _reloadConversations();
+    }
+  }
+
+  String _snippetFor(ChatMessage m) {
+    switch (m.kind) {
+      case MessageKind.voice:
+        return '🎤 Voice message';
+      case MessageKind.file:
+        return '📎 ${m.fileName ?? m.text}';
+      case MessageKind.text:
+        return m.text;
+    }
   }
 
   Future<List<ChatMessage>> messagesFor(String peerUserId) async {
@@ -282,6 +445,10 @@ class ChatRepository extends ChangeNotifier {
       ts: packet.ts,
       direction: MessageDirection.outgoing,
       status: MessageStatus.sent,
+      replyToId: packet.replyToId,
+      replyToText: packet.replyToText,
+      replyToSender: packet.replyToSender,
+      forwarded: packet.forwarded,
     );
     await _insertMessage(message);
     await _upsertConversation(
@@ -302,6 +469,10 @@ class ChatRepository extends ChangeNotifier {
       ts: packet.ts,
       direction: MessageDirection.incoming,
       status: MessageStatus.delivered,
+      replyToId: packet.replyToId,
+      replyToText: packet.replyToText,
+      replyToSender: packet.replyToSender,
+      forwarded: packet.forwarded,
     );
     await _insertMessage(message);
     await _upsertConversation(

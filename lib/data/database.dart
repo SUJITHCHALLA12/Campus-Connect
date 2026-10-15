@@ -8,7 +8,7 @@ class AppDatabase {
     final dir = await getDatabasesPath();
     return openDatabase(
       p.join(dir, 'campus_connect.db'),
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE conversations(
@@ -33,6 +33,12 @@ class AppDatabase {
             file_size INTEGER,
             mime_type TEXT,
             file_path TEXT,
+            edited INTEGER NOT NULL DEFAULT 0,
+            reactions TEXT NOT NULL DEFAULT '{}',
+            reply_to_id TEXT,
+            reply_to_text TEXT,
+            reply_to_sender TEXT,
+            forwarded INTEGER NOT NULL DEFAULT 0,
             FOREIGN KEY(conversation_id) REFERENCES conversations(peer_user_id)
           )
         ''');
@@ -72,6 +78,20 @@ class AppDatabase {
               unread INTEGER NOT NULL DEFAULT 0
             )
           ''');
+        }
+        if (oldVersion < 4) {
+          // v4: message actions — edit, reactions, reply quotes, forward.
+          await db.execute(
+              'ALTER TABLE messages ADD COLUMN edited INTEGER NOT NULL DEFAULT 0');
+          await db.execute(
+              "ALTER TABLE messages ADD COLUMN reactions TEXT NOT NULL DEFAULT '{}'");
+          await db.execute('ALTER TABLE messages ADD COLUMN reply_to_id TEXT');
+          await db
+              .execute('ALTER TABLE messages ADD COLUMN reply_to_text TEXT');
+          await db.execute(
+              'ALTER TABLE messages ADD COLUMN reply_to_sender TEXT');
+          await db.execute(
+              'ALTER TABLE messages ADD COLUMN forwarded INTEGER NOT NULL DEFAULT 0');
         }
       },
     );

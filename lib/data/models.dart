@@ -29,6 +29,21 @@ class ChatMessage {
   final String? mimeType;
   final String? filePath;
 
+  /// True when the author edited this message after sending.
+  final bool edited;
+
+  /// Reactions by sender user id → emoji. One reaction per sender;
+  /// sending the same emoji again removes it.
+  final Map<String, String> reactions;
+
+  /// Quote this message replies to (null when it is not a reply).
+  final String? replyToId;
+  final String? replyToText;
+  final String? replyToSender;
+
+  /// True when this message was forwarded from another chat.
+  final bool forwarded;
+
   ChatMessage({
     required this.id,
     required this.conversationId,
@@ -42,6 +57,12 @@ class ChatMessage {
     this.fileSize,
     this.mimeType,
     this.filePath,
+    this.edited = false,
+    this.reactions = const {},
+    this.replyToId,
+    this.replyToText,
+    this.replyToSender,
+    this.forwarded = false,
   });
 
   /// Copies the message, replacing only the given fields. Used when a
@@ -59,6 +80,12 @@ class ChatMessage {
         fileSize: fileSize,
         mimeType: mimeType,
         filePath: filePath,
+        edited: edited,
+        reactions: reactions,
+        replyToId: replyToId,
+        replyToText: replyToText,
+        replyToSender: replyToSender,
+        forwarded: forwarded,
       );
 
   Map<String, Object?> toMap() => {
@@ -74,22 +101,41 @@ class ChatMessage {
         'file_size': fileSize,
         'mime_type': mimeType,
         'file_path': filePath,
+        'edited': edited ? 1 : 0,
+        'reactions': jsonEncode(reactions),
+        'reply_to_id': replyToId,
+        'reply_to_text': replyToText,
+        'reply_to_sender': replyToSender,
+        'forwarded': forwarded ? 1 : 0,
       };
 
-  factory ChatMessage.fromMap(Map<String, Object?> m) => ChatMessage(
-        id: m['id'] as String,
-        conversationId: m['conversation_id'] as String,
-        senderId: m['sender_id'] as String,
-        text: m['text'] as String,
-        ts: (m['ts'] as num).toInt(),
-        direction: MessageDirection.values[(m['direction'] as num).toInt()],
-        status: MessageStatus.values[(m['status'] as num).toInt()],
-        kind: MessageKind.values[(m['kind'] as num?)?.toInt() ?? 0],
-        fileName: m['file_name'] as String?,
-        fileSize: (m['file_size'] as num?)?.toInt(),
-        mimeType: m['mime_type'] as String?,
-        filePath: m['file_path'] as String?,
-      );
+  factory ChatMessage.fromMap(Map<String, Object?> m) {
+    final rawReactions = m['reactions'];
+    final decodedReactions = rawReactions == null
+        ? <String, dynamic>{}
+        : jsonDecode(rawReactions as String);
+    return ChatMessage(
+      id: m['id'] as String,
+      conversationId: m['conversation_id'] as String,
+      senderId: m['sender_id'] as String,
+      text: m['text'] as String,
+      ts: (m['ts'] as num).toInt(),
+      direction: MessageDirection.values[(m['direction'] as num).toInt()],
+      status: MessageStatus.values[(m['status'] as num).toInt()],
+      kind: MessageKind.values[(m['kind'] as num?)?.toInt() ?? 0],
+      fileName: m['file_name'] as String?,
+      fileSize: (m['file_size'] as num?)?.toInt(),
+      mimeType: m['mime_type'] as String?,
+      filePath: m['file_path'] as String?,
+      edited: ((m['edited'] as num?)?.toInt() ?? 0) == 1,
+      reactions: (decodedReactions as Map)
+          .map((k, v) => MapEntry(k.toString(), v.toString())),
+      replyToId: m['reply_to_id'] as String?,
+      replyToText: m['reply_to_text'] as String?,
+      replyToSender: m['reply_to_sender'] as String?,
+      forwarded: ((m['forwarded'] as num?)?.toInt() ?? 0) == 1,
+    );
+  }
 }
 
 /// A group chat: one shared conversation across several phones.

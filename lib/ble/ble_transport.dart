@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
@@ -102,6 +103,35 @@ class BleChatService extends ChangeNotifier {
     return list;
   }
 
+  /// Smoothed RSSI per peer (exponential moving average, keyed by
+  /// shortId). Raw RSSI jumps several dBm scan to scan as the phone
+  /// moves or the signal reflects; the EMA steadies the distance
+  /// estimate without hiding real movement.
+  final Map<String, double> _smoothedRssi = {};
+
+  /// Rough distance estimate in metres from an RSSI reading, via the
+  /// log-distance path-loss model: d = 10 ^ ((txPower − rssi) / 10n).
+  /// txPower −59 dBm ≈ RSSI at 1 m, n = 2.0 (free-space-ish). BLE
+  /// cannot measure true distance — walls, bodies and reflections
+  /// shift RSSI by metres — so treat the number as an estimate.
+  static double estimateDistanceMeters(int rssi) {
+    const txPower = -59.0;
+    const pathLossExponent = 2.0;
+    return math.pow(10, (txPower - rssi) / (10 * pathLossExponent))
+        .toDouble();
+  }
+
+  /// Estimated distance in metres to a connected peer, from their
+  /// smoothed advertisement RSSI. Null when no recent advertisement
+  /// is known (e.g. the peer is linked but their ads stopped).
+  double? distanceToUser(String userId) {
+    final shortId = _userIdToShortId[userId];
+    if (shortId == null) return null;
+    final smoothed = _smoothedRssi[shortId];
+    if (smoothed == null) return null;
+    return estimateDistanceMeters(smoothed.round());
+  }
+
   List<PeerLink> get links => _links.values.toList();
 
   PeerLink? linkForUser(String userId) {
@@ -202,6 +232,11 @@ class BleChatService extends ChangeNotifier {
     if (parsed.shortId == identity.shortId) return; // our own advertisement
 
     final key = e.peripheral.uuid.toString();
+    // Smooth the RSSI: raw readings jitter by several dBm per scan.
+    final previous = _smoothedRssi[parsed.shortId];
+    _smoothedRssi[parsed.shortId] = previous == null
+        ? e.rssi.toDouble()
+        : previous * 0.7 + e.rssi * 0.3;
     final existing = _peers[key];
     if (existing != null) {
       existing.rssi = e.rssi;
@@ -478,6 +513,19 @@ class BleChatService extends ChangeNotifier {
         unawaited(_finishIncomingFile(link, packet));
         break;
       case 'groupMsg':
+        _incoming.add(packet);
+        unawaited(_writeToLink(
+            link,
+            BlePacket.ack(
+              forId: packet.id,
+              from: identity.userId,
+              name: identity.displayName,
+            )));
+        break;
+      case 'edit':
+      case 'delete':
+      case 'react':
+        // Message actions: apply on the receiver, ack like a message.
         _incoming.add(packet);
         unawaited(_writeToLink(
             link,

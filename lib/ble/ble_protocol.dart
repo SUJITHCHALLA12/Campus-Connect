@@ -77,6 +77,13 @@ abstract final class BleProtocol {
 ///             once an incoming file is saved (carries the local path)
 ///   * groupMsg — a message to a group chat (carries group id, name and
 ///             the member map so a receiver can create the group)
+///   * edit — replaces the text of a message the sender authored
+///             (carries the edited message's id; only the author may
+///             edit, and only within 5 minutes of sending)
+///   * delete — deletes a message the sender authored everywhere
+///             (carries the deleted message's id)
+///   * react — a reaction to a message (carries the message id + emoji;
+///             sending the same emoji again removes the reaction)
 class BlePacket {
   final String type;
   final String id;
@@ -94,6 +101,14 @@ class BlePacket {
   final String? groupId;
   final String? groupName;
   final Map<String, String>? members;
+  final String? editId;
+  final String? deleteId;
+  final String? reactId;
+  final String? reactEmoji;
+  final String? replyToId;
+  final String? replyToText;
+  final String? replyToSender;
+  final bool forwarded;
 
   BlePacket({
     required this.type,
@@ -112,6 +127,14 @@ class BlePacket {
     this.groupId,
     this.groupName,
     this.members,
+    this.editId,
+    this.deleteId,
+    this.reactId,
+    this.reactEmoji,
+    this.replyToId,
+    this.replyToText,
+    this.replyToSender,
+    this.forwarded = false,
   });
 
   factory BlePacket.hello({
@@ -132,6 +155,10 @@ class BlePacket {
     required String from,
     required String name,
     required String text,
+    String? replyToId,
+    String? replyToText,
+    String? replyToSender,
+    bool forwarded = false,
   }) =>
       BlePacket(
         type: 'msg',
@@ -140,6 +167,10 @@ class BlePacket {
         name: name,
         ts: DateTime.now().millisecondsSinceEpoch,
         text: text,
+        replyToId: replyToId,
+        replyToText: replyToText,
+        replyToSender: replyToSender,
+        forwarded: forwarded,
       );
 
   factory BlePacket.ack({
@@ -245,6 +276,10 @@ class BlePacket {
     required String groupId,
     required String groupName,
     required Map<String, String> members,
+    String? replyToId,
+    String? replyToText,
+    String? replyToSender,
+    bool forwarded = false,
   }) =>
       BlePacket(
         type: 'groupMsg',
@@ -256,6 +291,69 @@ class BlePacket {
         groupId: groupId,
         groupName: groupName,
         members: members,
+        replyToId: replyToId,
+        replyToText: replyToText,
+        replyToSender: replyToSender,
+        forwarded: forwarded,
+      );
+
+  /// Replaces the text of a message the sender authored. [editId] is
+  /// the edited message's id. [groupId] set → a group message edit
+  /// (fanned out to members); null → a 1:1 edit.
+  factory BlePacket.edit({
+    required String from,
+    required String name,
+    required String editId,
+    required String text,
+    String? groupId,
+  }) =>
+      BlePacket(
+        type: 'edit',
+        id: const Uuid().v4(),
+        from: from,
+        name: name,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        text: text,
+        editId: editId,
+        groupId: groupId,
+      );
+
+  /// Deletes a message the sender authored everywhere. [deleteId] is
+  /// the deleted message's id. [groupId] set → a group message delete.
+  factory BlePacket.deleteMsg({
+    required String from,
+    required String name,
+    required String deleteId,
+    String? groupId,
+  }) =>
+      BlePacket(
+        type: 'delete',
+        id: const Uuid().v4(),
+        from: from,
+        name: name,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        deleteId: deleteId,
+        groupId: groupId,
+      );
+
+  /// A reaction to a message. [reactId] is the message's id, [emoji]
+  /// the reaction. Sending the same emoji again removes the reaction.
+  factory BlePacket.react({
+    required String from,
+    required String name,
+    required String reactId,
+    required String emoji,
+    String? groupId,
+  }) =>
+      BlePacket(
+        type: 'react',
+        id: const Uuid().v4(),
+        from: from,
+        name: name,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        reactId: reactId,
+        reactEmoji: emoji,
+        groupId: groupId,
       );
 
   Map<String, dynamic> toJson() => {
@@ -275,6 +373,14 @@ class BlePacket {
         if (groupId != null) 'gid': groupId,
         if (groupName != null) 'gname': groupName,
         if (members != null) 'members': members,
+        if (editId != null) 'editId': editId,
+        if (deleteId != null) 'deleteId': deleteId,
+        if (reactId != null) 'reactId': reactId,
+        if (reactEmoji != null) 'reactEmoji': reactEmoji,
+        if (replyToId != null) 'replyTo': replyToId,
+        if (replyToText != null) 'replyText': replyToText,
+        if (replyToSender != null) 'replyName': replyToSender,
+        if (forwarded) 'fwd': true,
       };
 
   factory BlePacket.fromJson(Map<String, dynamic> json) => BlePacket(
@@ -296,6 +402,14 @@ class BlePacket {
         members: (json['members'] as Map?)?.map(
           (k, v) => MapEntry(k.toString(), v.toString()),
         ),
+        editId: json['editId'] as String?,
+        deleteId: json['deleteId'] as String?,
+        reactId: json['reactId'] as String?,
+        reactEmoji: json['reactEmoji'] as String?,
+        replyToId: json['replyTo'] as String?,
+        replyToText: json['replyText'] as String?,
+        replyToSender: json['replyName'] as String?,
+        forwarded: (json['fwd'] as bool?) ?? false,
       );
 
   Uint8List encode() => Uint8List.fromList(utf8.encode(jsonEncode(toJson())));
