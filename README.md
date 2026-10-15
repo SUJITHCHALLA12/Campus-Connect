@@ -79,15 +79,21 @@ docs/        PROTOCOL.md, ARCHITECTURE.md
    Edit (own text, 5 min window) / Copy / Forward / Info / Delete
    (for me / for everyone). Slide any bubble to reply; replies carry
    a quote, forwarded messages a label, edits an "Edited" tag.
-7. **M1.10 / v0.7** — Startup popups ✅ (this): Bluetooth permission
+7. **M1.10 / v0.7** — Startup popups ✅: Bluetooth permission
    prompts, then a "Turn on Bluetooth?" popup when Bluetooth is off
    (Turn on opens system Bluetooth settings; Not now leaves a
    tap-to-turn-on banner). On launch the app also checks
    `version.json` on main — when a newer release is out it offers an
    Update popup that opens the Releases page.
-8. **M2** — Privacy: ECDH + AES-GCM per conversation
-9. **M4** — Internet relay for distant users (Supabase project on standby)
-10. **M5** — iOS support
+8. **M1.11 / v0.7.0+3** — Reliability fixes ✅ (this): splash loading
+   page truly centred (Stack + SafeArea had pinned it left);
+   tap-to-resend for failed messages (failed row is replaced by a
+   fresh send, so no duplicates); reconnect — tap "Out of range"
+   in a 1:1 chat to redial, plus auto-reconnect (advertising
+   restarts after disconnect + a 10 s retry sweep).
+9. **M2** — Privacy: ECDH + AES-GCM per conversation
+10. **M4** — Internet relay for distant users (Supabase project on standby)
+11. **M5** — iOS support
 
 The app theme follows the logo: cyan → violet gradients on a deep-navy
 background, with the logo on the splash and welcome screens.

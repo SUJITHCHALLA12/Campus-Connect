@@ -91,6 +91,30 @@ explicitly; the receiver detects `audio/*` mimes), and the chat renders
 a play/pause bubble with progress instead of a file tile. Group chats
 do not send voice yet — their composer shows the send button only.
 
+## Reconnect + resend (v0.7.0+3)
+
+**Why reconnect was broken.** A BLE peripheral stops advertising
+while connected and does not resume on its own — so after a
+disconnect the other phone could never re-discover this one, and
+"Out of range" was permanent until an app restart. Now the
+transport restarts advertising on every peripheral-side
+disconnect, and a 10 s sweep retries unlinked, still-advertising
+peers (tie-break winner dials). Manual reconnect: tap the
+"Out of range · Tap to reconnect" subtitle in a 1:1 chat.
+`reconnectTo()` keeps working because the userId → shortId mapping
+is no longer dropped on disconnect (pruned only when the peer is
+gone for good).
+
+**Resend.** Tapping a failed outgoing message (red error tick)
+deletes the failed row and sends a fresh message with the same
+text / file / reply / forwarded fields — same id is never reused,
+so the peer can never get a duplicate.
+
+**Splash centering.** The splash put a bare `SafeArea` in a `Stack`:
+in a Stack, SafeArea sizes to its content and the Stack pins it
+top-left, so the whole loading page sat left. `Positioned.fill`
+forces full size so the Column truly centres.
+
 ## Updates keep your data (v0.7.0+2)
 
 Two things make updates preserve everything:

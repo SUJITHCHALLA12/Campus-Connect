@@ -248,6 +248,91 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) _scrollToBottom();
   }
 
+  // ─── Resend ─────────────────────────────────────────────
+
+  /// Resends a failed outgoing message (tap on its bubble). The
+  /// failed row is removed first and a fresh message is sent with the
+  /// same text / file / reply / forwarded fields, so the peer can
+  /// never receive a duplicate of the same id.
+  Future<void> _resend(ChatMessage message) async {
+    final repo = context.read<ChatRepository>();
+    final text = message.text;
+    final kind = message.kind;
+    final fileName = message.fileName;
+    final mimeType = message.mimeType;
+    final filePath = message.filePath;
+    final replyToId = message.replyToId;
+    final replyToText = message.replyToText;
+    final replyToSender = message.replyToSender;
+    final forwarded = message.forwarded;
+    await repo.deleteMessageLocal(message.id);
+
+    if (kind == MessageKind.text) {
+      final identity = context.read<IdentityStore>();
+      final ble = context.read<BleChatService>();
+      final packet = BlePacket.msg(
+        from: identity.userId,
+        name: identity.displayName,
+        text: text,
+        replyToId: replyToId,
+        replyToText: replyToText,
+        replyToSender: replyToSender,
+        forwarded: forwarded,
+      );
+      await repo.saveOutgoing(
+        peerUserId: widget.peerUserId,
+        peerName: widget.peerName,
+        packet: packet,
+      );
+      final ok = await ble.sendTo(widget.peerUserId, packet);
+      if (!ok) {
+        await repo.markFailed(packet.id);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Still out of range — tap the message to retry.'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+      if (mounted) _scrollToBottom();
+      return;
+    }
+
+    // File / voice: re-send the same local file.
+    if (filePath == null || filePath.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Original file not found — cannot resend.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+    try {
+      final bytes = await File(filePath).readAsBytes();
+      await _sendFileBytes(
+        bytes: bytes,
+        fileName: fileName ?? text,
+        mimeType: mimeType ?? 'application/octet-stream',
+        filePath: filePath,
+        kind: kind,
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Original file not found — cannot resend.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
   // ─── Message actions ──────────────────────────────────────
 
   void _showActions(ChatMessage message) {
@@ -617,6 +702,11 @@ class _ChatScreenState extends State<ChatScreen> {
                             message: m,
                             progress: repo.fileProgress[m.id],
                             onLongPress: () => _showActions(m),
+                            onTap: m.direction ==
+                                        MessageDirection.outgoing &&
+                                    m.status == MessageStatus.failed
+                                ? () => _resend(m)
+                                : null,
                             onSwipeReply: () =>
                                 setState(() => _replyingTo = m),
                             onReactionTap: () => _showActions(m),
@@ -706,6 +796,23 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// Manual reconnect from the "Out of range" subtitle.
+  Future<void> _reconnect() async {
+    final ok = await context
+        .read<BleChatService>()
+        .reconnectTo(widget.peerUserId);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(ok
+              ? 'Reconnected to ${widget.peerName}.'
+              : 'Still out of range — move closer and try again.'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
   Widget _appBar(bool connected) {
     return Container(
       padding: const EdgeInsets.fromLTRB(4, 8, 12, 8),
@@ -758,17 +865,20 @@ class _ChatScreenState extends State<ChatScreen> {
                     color: CcColors.textPrimary,
                   ),
                 ),
-                Text(
-                  connected
-                      ? _distanceM != null
-                          ? 'Nearby · ${_distanceM!.toStringAsFixed(3)} m away'
-                          : 'Nearby · connected'
-                      : 'Out of range',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 12,
-                    color: connected
-                        ? CcColors.onlineGreen
-                        : CcColors.textMuted,
+                GestureDetector(
+                  onTap: connected ? null : _reconnect,
+                  child: Text(
+                    connected
+                        ? _distanceM != null
+                            ? 'Nearby · ${_distanceM!.toStringAsFixed(3)} m away'
+                            : 'Nearby · connected'
+                        : 'Out of range · Tap to reconnect',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12,
+                      color: connected
+                          ? CcColors.onlineGreen
+                          : CcColors.textMuted,
+                    ),
                   ),
                 ),
               ],

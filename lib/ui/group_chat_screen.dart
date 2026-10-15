@@ -138,6 +138,53 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
           ? widget.group.members[m.senderId] ?? 'Someone'
           : 'You';
 
+  // ─── Resend ─────────────────────────────────────────────
+
+  /// Resends a failed outgoing group message (tap on its bubble).
+  /// The failed row is removed first and a fresh message is fanned
+  /// out, so members can never receive a duplicate of the same id.
+  Future<void> _resend(ChatMessage message) async {
+    final repo = context.read<ChatRepository>();
+    final text = message.text;
+    final replyToId = message.replyToId;
+    final replyToText = message.replyToText;
+    final replyToSender = message.replyToSender;
+    final forwarded = message.forwarded;
+    await repo.deleteMessageLocal(message.id);
+
+    final identity = context.read<IdentityStore>();
+    final members = Map<String, String>.from(widget.group.members)
+      ..[identity.userId] = identity.displayName;
+    final packet = BlePacket.groupMsg(
+      from: identity.userId,
+      name: identity.displayName,
+      text: text,
+      groupId: widget.group.id,
+      groupName: widget.group.name,
+      members: members,
+      replyToId: replyToId,
+      replyToText: replyToText,
+      replyToSender: replyToSender,
+      forwarded: forwarded,
+    );
+    await repo.saveOutgoingGroupMsg(group: widget.group, packet: packet);
+    final delivered = await _fanOut(packet);
+    if (delivered == 0) {
+      await repo.markFailed(packet.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Still out of range — tap the message to retry.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      await repo.markDelivered(packet.id);
+    }
+    if (mounted) _scrollToBottom();
+  }
+
   // ─── Message actions ──────────────────────────────────────
 
   void _showActions(ChatMessage message) {
@@ -506,6 +553,11 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                             message: m,
                             senderName: senderName,
                             onLongPress: () => _showActions(m),
+                            onTap: m.direction ==
+                                        MessageDirection.outgoing &&
+                                    m.status == MessageStatus.failed
+                                ? () => _resend(m)
+                                : null,
                             onSwipeReply: () =>
                                 setState(() => _replyingTo = m),
                             onReactionTap: () => _showActions(m),
