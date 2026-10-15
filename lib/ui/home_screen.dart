@@ -3,8 +3,11 @@ import 'dart:io';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -1319,7 +1322,7 @@ class _ProfilePage extends StatelessWidget {
           decoration: CcGlass.panel(),
           child: Row(
             children: [
-              _Avatar(name: identity.displayName, size: 60),
+              _profileAvatar(context, identity),
               const SizedBox(width: 14),
               Expanded(
                 child: Column(
@@ -1356,6 +1359,15 @@ class _ProfilePage extends StatelessWidget {
         ),
         _option(
           context,
+          icon: Icons.photo_camera_rounded,
+          title: 'Profile photo',
+          subtitle: identity.profilePhotoPath == null
+              ? 'Add a photo (only shown on this phone)'
+              : 'Change or remove your photo',
+          onTap: () => _photoSheet(context, identity),
+        ),
+        _option(
+          context,
           icon: Icons.info_outline_rounded,
           title: 'About Campus Connect',
           onTap: () => _about(context),
@@ -1371,7 +1383,7 @@ class _ProfilePage extends StatelessWidget {
         const SizedBox(height: 24),
         Center(
           child: Text(
-            'Campus Connect v0.7 · BLE-first · plaintext v1',
+            'Campus Connect v0.8 · BLE-first · plaintext v1',
             style: GoogleFonts.dmSans(
               fontSize: 11,
               color: CcColors.textMuted,
@@ -1438,6 +1450,132 @@ class _ProfilePage extends StatelessWidget {
     );
   }
 
+  /// Profile avatar: the photo when one is set, otherwise the
+  /// initials gradient. Tapping opens the photo sheet.
+  Widget _profileAvatar(BuildContext context, IdentityStore identity) {
+    final photoPath = identity.profilePhotoPath;
+    final hasPhoto = photoPath != null && File(photoPath).existsSync();
+    return GestureDetector(
+      onTap: () => _photoSheet(context, identity),
+      child: Stack(
+        children: [
+          if (hasPhoto)
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                image: DecorationImage(
+                  image: FileImage(File(photoPath)),
+                  fit: BoxFit.cover,
+                ),
+              ),
+            )
+          else
+            _Avatar(name: identity.displayName, size: 60),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: CcColors.aquaCore,
+                border: Border.all(
+                  color: CcColors.deepSea,
+                  width: 2,
+                ),
+              ),
+              child: const Icon(
+                Icons.camera_alt_rounded,
+                color: Colors.white,
+                size: 11,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _photoSheet(BuildContext context, IdentityStore identity) {
+    final hasPhoto = identity.profilePhotoPath != null;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: CcColors.deepSea,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.25),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              _option(
+                sheetContext,
+                icon: Icons.photo_library_rounded,
+                title: hasPhoto ? 'Change photo' : 'Choose photo',
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _changePhoto(context, identity);
+                },
+              ),
+              if (hasPhoto)
+                _option(
+                  sheetContext,
+                  icon: Icons.delete_outline_rounded,
+                  title: 'Remove photo',
+                  danger: true,
+                  onTap: () async {
+                    Navigator.of(sheetContext).pop();
+                    await identity.clearProfilePhoto();
+                  },
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Picks an image, copies it into app storage as profile_photo.jpg,
+  /// and remembers it. The system picker needs no extra permission.
+  Future<void> _changePhoto(
+      BuildContext context, IdentityStore identity) async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.image,
+        allowMultiple: false,
+      );
+      final source = picked?.files.single.path;
+      if (source == null) return;
+      final dir = await getApplicationDocumentsDirectory();
+      final dest = File(p.join(dir.path, 'profile_photo.jpg'));
+      await File(source).copy(dest.path);
+      await identity.setProfilePhoto(dest.path);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not set photo: $e'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   void _editName(BuildContext context, IdentityStore identity) {
     final controller =
         TextEditingController(text: identity.displayName);
@@ -1491,7 +1629,7 @@ class _ProfilePage extends StatelessWidget {
         content: Text(
           'Nearby-first campus messaging over Bluetooth Low Energy. '
           'Chat with phones around you — no internet, no servers, no accounts.\n\n'
-          'v0.7 messages are plaintext over the air; per-conversation '
+          'v0.8 messages are plaintext over the air; per-conversation '
           'encryption is on the roadmap.',
           style: GoogleFonts.dmSans(
               color: CcColors.textSecondary, fontSize: 14),

@@ -3,7 +3,7 @@
 Nearby-first campus messaging over **Bluetooth Low Energy**. No internet, no
 servers, no accounts — open the app near another phone running it and chat.
 
-> **Status:** v0.7 (Android). Messages are currently **plaintext**
+> **Status:** v0.8 (Android). Messages are currently **plaintext**
 > over the air; per-conversation encryption is a planned milestone, not a
 > claim. See `docs/ARCHITECTURE.md`.
 
@@ -85,15 +85,22 @@ docs/        PROTOCOL.md, ARCHITECTURE.md
    tap-to-turn-on banner). On launch the app also checks
    `version.json` on main — when a newer release is out it offers an
    Update popup that opens the Releases page.
-8. **M1.11 / v0.7.0+3** — Reliability fixes ✅ (this): splash loading
+8. **M1.11 / v0.7.0+3** — Reliability fixes ✅: splash loading
    page truly centred (Stack + SafeArea had pinned it left);
    tap-to-resend for failed messages (failed row is replaced by a
    fresh send, so no duplicates); reconnect — tap "Out of range"
    in a 1:1 chat to redial, plus auto-reconnect (advertising
    restarts after disconnect + a 10 s retry sweep).
-9. **M2** — Privacy: ECDH + AES-GCM per conversation
-10. **M4** — Internet relay for distant users (Supabase project on standby)
-11. **M5** — iOS support
+9. **M1.12 / v0.8** — Message menu, groups, profile ✅: long-press
+   now opens a WhatsApp-style popup anchored at the message (quick
+   reactions + a "+" full reaction grid) instead of a bottom
+   sheet; group creation failures surface the real error instead
+   of silently doing nothing, and the empty member list offers
+   "Pair with nearby"; Profile tab gains a profile photo setting
+   (local-only for now — peers still see the initials avatar).
+10. **M2** — Privacy: ECDH + AES-GCM per conversation
+11. **M4** — Internet relay for distant users (Supabase project on standby)
+12. **M5** — iOS support
 
 The app theme follows the logo: cyan → violet gradients on a deep-navy
 background, with the logo on the splash and welcome screens.
