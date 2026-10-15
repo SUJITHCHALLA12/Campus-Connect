@@ -33,8 +33,13 @@ class _SplashScreenState extends State<SplashScreen> {
       body: Stack(
         children: [
           const AuroraBackground(),
-          SafeArea(
-            child: Column(
+          // Positioned.fill: in a Stack, a bare SafeArea sizes to its
+          // content and the Stack pins it top-left — which pushed the
+          // whole loading page to the left. Filling the Stack keeps
+          // the Column full-width so its children truly centre.
+          Positioned.fill(
+            child: SafeArea(
+              child: Column(
               children: [
                 const Spacer(flex: 3),
                 Container(
@@ -74,6 +79,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 const SizedBox(height: 48),
               ],
             ),
+          ),
           ),
         ],
       ),

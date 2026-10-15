@@ -35,6 +35,10 @@ class MessageBubble extends StatefulWidget {
   /// forward / info / delete).
   final VoidCallback? onLongPress;
 
+  /// Tap on the bubble. The screens wire this only for failed
+  /// outgoing messages, where a tap resends.
+  final VoidCallback? onTap;
+
   /// Slide-to-reply gesture completed.
   final VoidCallback? onSwipeReply;
 
@@ -47,6 +51,7 @@ class MessageBubble extends StatefulWidget {
     this.progress,
     this.senderName,
     this.onLongPress,
+    this.onTap,
     this.onSwipeReply,
     this.onReactionTap,
   });
@@ -66,6 +71,7 @@ class _MessageBubbleState extends State<MessageBubble> {
     return Align(
       alignment: outgoing ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
+        onTap: widget.onTap,
         onLongPress: widget.onLongPress,
         onHorizontalDragUpdate: (details) {
           setState(() {

@@ -83,6 +83,7 @@ class BleChatService extends ChangeNotifier {
 
   final List<StreamSubscription> _subs = [];
   Timer? _pruneTimer;
+  Timer? _reconnectTimer;
 
   /// Collects incoming file-transfer packets (fileStart/fileChunk/
   /// fileEnd) and assembles the file bytes.
@@ -179,12 +180,7 @@ class BleChatService extends ChangeNotifier {
         _peripheral.characteristicWriteRequested.listen(_onWriteRequested));
     _subs.add(_peripheral.connectionStateChanged.listen(_onPeripheralConn));
 
-    await _peripheral.startAdvertising(Advertisement(
-      name: BleProtocol.advName(identity.shortId, identity.displayName),
-      serviceUUIDs: [BleProtocol.serviceUuid],
-      serviceData: {},
-      manufacturerSpecificData: [],
-    ));
+    await _startAdvertising();
 
     // ---- central role: scan for the service ----
     _subs.add(_central.discovered.listen(_onDiscovered));
@@ -195,6 +191,12 @@ class BleChatService extends ChangeNotifier {
 
     _pruneTimer =
         Timer.periodic(AppConstants.peerPruneInterval, (_) => _prunePeers());
+    // Auto-reconnect sweep: retry unlinked peers that are still
+    // advertising (covers discovery events the scan may have missed).
+    _reconnectTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _retryPendingLinks(),
+    );
 
     _running = true;
     notifyListeners();
@@ -204,6 +206,7 @@ class BleChatService extends ChangeNotifier {
     if (!_running) return;
     _running = false;
     _pruneTimer?.cancel();
+    _reconnectTimer?.cancel();
     for (final s in _subs) {
       await s.cancel();
     }
@@ -224,7 +227,56 @@ class BleChatService extends ChangeNotifier {
     super.dispose();
   }
 
-  // ------------------------------------------------------------- discovery
+  /// (Re)starts advertising our presence. Called at startup and
+  /// again after a peripheral-side disconnect: a peripheral stops
+  /// advertising while connected and does NOT resume on its own, so
+  /// without this the other phone could never re-discover us and
+  /// auto-reconnect would be dead.
+  Future<void> _startAdvertising() async {
+    try {
+      await _peripheral.startAdvertising(Advertisement(
+        name: BleProtocol.advName(identity.shortId, identity.displayName),
+        serviceUUIDs: [BleProtocol.serviceUuid],
+        serviceData: {},
+        manufacturerSpecificData: [],
+      ));
+    } catch (_) {
+      // Already advertising (or Bluetooth off) — the sweep and the
+      // next discovery round will pick it up.
+    }
+  }
+
+  /// Retries links to peers that are still advertising but unlinked.
+  /// Only the tie-break winner (larger shortId) initiates, so exactly
+  /// one side dials.
+  void _retryPendingLinks() {
+    if (!_running) return;
+    final cutoff = DateTime.now().subtract(const Duration(seconds: 60));
+    for (final peer in _peers.values) {
+      if (peer.linkUp) continue;
+      if (peer.lastSeen.isBefore(cutoff)) continue;
+      if (identity.shortId.compareTo(peer.shortId) <= 0) continue;
+      unawaited(_connectAsCentral(peer));
+    }
+  }
+
+  /// Manual reconnect to a peer by user id. Returns true when the
+  /// link is up afterwards. False when the peer is not nearby
+  /// (no recent advertisement) or the connect failed.
+  Future<bool> reconnectTo(String userId) async {
+    final shortId = _userIdToShortId[userId];
+    if (shortId == null) return false;
+    NearbyPeer? peer;
+    for (final p in _peers.values) {
+      if (p.shortId == shortId) {
+        peer = p;
+        break;
+      }
+    }
+    if (peer == null) return false;
+    await _connectAsCentral(peer);
+    return _links.containsKey(shortId);
+  }
 
   void _onDiscovered(DiscoveredEventArgs e) {
     final parsed = BleProtocol.parseAdvName(e.advertisement.name);
@@ -266,7 +318,16 @@ class BleChatService extends ChangeNotifier {
   void _prunePeers() {
     final cutoff =
         DateTime.now().subtract(AppConstants.peerStaleAfter);
-    _peers.removeWhere((_, p) => p.lastSeen.isBefore(cutoff) && !p.linkUp);
+    final removedShortIds = <String>{};
+    _peers.removeWhere((_, p) {
+      final stale = p.lastSeen.isBefore(cutoff) && !p.linkUp;
+      if (stale) removedShortIds.add(p.shortId);
+      return stale;
+    });
+    // Drop user-id mappings that point at pruned peers so
+    // reconnectTo() reports "not nearby" instead of chasing ghosts.
+    _userIdToShortId
+        .removeWhere((_, shortId) => removedShortIds.contains(shortId));
     notifyListeners();
   }
 
@@ -351,7 +412,9 @@ class BleChatService extends ChangeNotifier {
       }
       if (dead != null) {
         _links.remove(dead.shortId);
-        if (dead.userId != null) _userIdToShortId.remove(dead.userId);
+        // Keep the userId → shortId mapping: reconnectTo() needs it
+        // to find this peer again. _prunePeers clears it once the
+        // peer is gone for good.
         for (final peer in _peers.values) {
           if (peer.shortId == dead.shortId) peer.linkUp = false;
         }
@@ -455,11 +518,16 @@ class BleChatService extends ChangeNotifier {
       final link = _linkForCentral(ckey);
       if (link != null) {
         _links.remove(link.shortId);
-        if (link.userId != null) _userIdToShortId.remove(link.userId);
+        // Keep the userId → shortId mapping (see _onCentralConn):
+        // reconnectTo() needs it to find this peer again.
         _incomingReassemblers.remove(ckey);
         for (final peer in _peers.values) {
           if (peer.shortId == link.shortId) peer.linkUp = false;
         }
+        // Restart advertising: a peripheral stops advertising while
+        // connected and does not resume on its own. Without this the
+        // other phone can never re-discover us.
+        unawaited(_startAdvertising());
         notifyListeners();
       }
     }
