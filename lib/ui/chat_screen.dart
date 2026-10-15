@@ -335,7 +335,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   // ─── Message actions ──────────────────────────────────────
 
-  void _showActions(ChatMessage message) {
+  void _showActions(ChatMessage message, Offset anchor) {
     final isOwn = message.direction == MessageDirection.outgoing;
     // Edit window: own text message, within 5 minutes of sending.
     final canEdit = isOwn &&
@@ -343,8 +343,9 @@ class _ChatScreenState extends State<ChatScreen> {
         message.status != MessageStatus.failed &&
         DateTime.now().millisecondsSinceEpoch - message.ts <
             5 * 60 * 1000;
-    showMessageActionsSheet(
+    showMessageActionsMenu(
       context,
+      anchor: anchor,
       message: message,
       isOwn: isOwn,
       canEdit: canEdit,
@@ -701,7 +702,8 @@ class _ChatScreenState extends State<ChatScreen> {
                           return MessageBubble(
                             message: m,
                             progress: repo.fileProgress[m.id],
-                            onLongPress: () => _showActions(m),
+                            onLongPressStart: (pos) =>
+                                _showActions(m, pos),
                             onTap: m.direction ==
                                         MessageDirection.outgoing &&
                                     m.status == MessageStatus.failed
@@ -709,7 +711,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 : null,
                             onSwipeReply: () =>
                                 setState(() => _replyingTo = m),
-                            onReactionTap: () => _showActions(m),
+                            onReactionTap: (pos) =>
+                                _showActions(m, pos),
                           );
                         },
                       );

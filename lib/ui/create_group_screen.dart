@@ -6,6 +6,7 @@ import '../ble/ble_transport.dart';
 import '../core/constants.dart';
 import '../data/chat_repository.dart';
 import 'group_chat_screen.dart';
+import 'nearby_sheet.dart';
 
 /// Create a group chat: name it, pick members from people this phone
 /// has chatted with or is currently linked to, then jump into the
@@ -21,6 +22,7 @@ class CreateGroupScreen extends StatefulWidget {
 class _CreateGroupScreenState extends State<CreateGroupScreen> {
   final _nameController = TextEditingController();
   final Set<String> _selected = {};
+  bool _creating = false;
 
   @override
   void dispose() {
@@ -112,11 +114,41 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               Expanded(
                 child: ids.isEmpty
                     ? Center(
-                        child: Text(
-                          'No one to add yet — pair with a nearby phone first.',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.dmSans(
-                            color: CcColors.textMuted,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'No one to add yet — pair with a nearby phone first.',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.dmSans(
+                                  color: CcColors.textMuted,
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                              GestureDetector(
+                                onTap: () => showNearbySheet(context),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 20, vertical: 13),
+                                  decoration: BoxDecoration(
+                                    gradient: CcColors.buttonGradient,
+                                    borderRadius:
+                                        BorderRadius.circular(18),
+                                  ),
+                                  child: Text(
+                                    'Pair with nearby',
+                                    style: GoogleFonts.nunito(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       )
@@ -190,24 +222,45 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
               ),
               const SizedBox(height: 12),
               GestureDetector(
-                onTap: !canCreate
+                onTap: !canCreate || _creating
                     ? null
                     : () async {
-                        final members = {
-                          for (final id in _selected)
-                            id: candidates[id]!,
-                        };
-                        final group = await repo.createGroup(
-                          name: _nameController.text.trim(),
-                          members: members,
-                        );
-                        if (context.mounted) {
-                          Navigator.of(context).pushReplacement(
-                            MaterialPageRoute(
-                              builder: (_) =>
-                                  GroupChatScreen(group: group),
-                            ),
+                        setState(() => _creating = true);
+                        try {
+                          final members = {
+                            for (final id in _selected)
+                              id: candidates[id]!,
+                          };
+                          final group = await repo.createGroup(
+                            name: _nameController.text.trim(),
+                            members: members,
                           );
+                          if (context.mounted) {
+                            Navigator.of(context).pushReplacement(
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    GroupChatScreen(group: group),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          // Creation used to fail silently — the tap
+                          // just did nothing. Surface the real error
+                          // so a broken create is diagnosable.
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    'Could not create group: $e'),
+                                duration:
+                                    const Duration(seconds: 4),
+                              ),
+                            );
+                          }
+                        } finally {
+                          if (mounted) {
+                            setState(() => _creating = false);
+                          }
                         }
                       },
                 child: Container(
@@ -220,7 +273,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
                   ),
                   child: Center(
                     child: Text(
-                      'Create group',
+                      _creating ? 'Creating…' : 'Create group',
                       style: GoogleFonts.nunito(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,

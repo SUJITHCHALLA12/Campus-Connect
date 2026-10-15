@@ -31,9 +31,9 @@ class MessageBubble extends StatefulWidget {
   /// chats. Null in 1:1 chats.
   final String? senderName;
 
-  /// Long-press → actions sheet (reply / react / edit / copy /
-  /// forward / info / delete).
-  final VoidCallback? onLongPress;
+  /// Long-press → actions menu (reply / react / edit / copy /
+  /// forward / info / delete), anchored at the press position.
+  final ValueChanged<Offset>? onLongPressStart;
 
   /// Tap on the bubble. The screens wire this only for failed
   /// outgoing messages, where a tap resends.
@@ -42,15 +42,16 @@ class MessageBubble extends StatefulWidget {
   /// Slide-to-reply gesture completed.
   final VoidCallback? onSwipeReply;
 
-  /// Tapping the reactions row → reaction picker.
-  final VoidCallback? onReactionTap;
+  /// Tapping the reactions row → actions menu, anchored at the
+  /// reactions pill.
+  final ValueChanged<Offset>? onReactionTap;
 
   const MessageBubble({
     super.key,
     required this.message,
     this.progress,
     this.senderName,
-    this.onLongPress,
+    this.onLongPressStart,
     this.onTap,
     this.onSwipeReply,
     this.onReactionTap,
@@ -72,7 +73,8 @@ class _MessageBubbleState extends State<MessageBubble> {
       alignment: outgoing ? Alignment.centerRight : Alignment.centerLeft,
       child: GestureDetector(
         onTap: widget.onTap,
-        onLongPress: widget.onLongPress,
+        onLongPressStart: (details) =>
+            widget.onLongPressStart?.call(details.globalPosition),
         onHorizontalDragUpdate: (details) {
           setState(() {
             _dragDx = (_dragDx + details.delta.dx).clamp(-90.0, 90.0);
@@ -284,9 +286,16 @@ class _MessageBubbleState extends State<MessageBubble> {
     for (final emoji in message.reactions.values) {
       counts[emoji] = (counts[emoji] ?? 0) + 1;
     }
-    return GestureDetector(
-      onTap: widget.onReactionTap,
-      child: Container(
+    return Builder(
+      builder: (rowContext) => GestureDetector(
+        onTap: () {
+          final box = rowContext.findRenderObject() as RenderBox?;
+          final anchor = box == null
+              ? Offset.zero
+              : box.localToGlobal(box.size.center(Offset.zero));
+          widget.onReactionTap?.call(anchor);
+        },
+        child: Container(
         margin: const EdgeInsets.only(top: 1, bottom: 3),
         padding:
             const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -303,6 +312,7 @@ class _MessageBubbleState extends State<MessageBubble> {
             fontSize: 12,
             color: CcColors.textPrimary,
           ),
+        ),
         ),
       ),
     );

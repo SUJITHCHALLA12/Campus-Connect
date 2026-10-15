@@ -187,15 +187,16 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
 
   // ─── Message actions ──────────────────────────────────────
 
-  void _showActions(ChatMessage message) {
+  void _showActions(ChatMessage message, Offset anchor) {
     final isOwn = message.direction == MessageDirection.outgoing;
     final canEdit = isOwn &&
         message.kind == MessageKind.text &&
         message.status != MessageStatus.failed &&
         DateTime.now().millisecondsSinceEpoch - message.ts <
             5 * 60 * 1000;
-    showMessageActionsSheet(
+    showMessageActionsMenu(
       context,
+      anchor: anchor,
       message: message,
       isOwn: isOwn,
       canEdit: canEdit,
@@ -552,7 +553,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                           return MessageBubble(
                             message: m,
                             senderName: senderName,
-                            onLongPress: () => _showActions(m),
+                            onLongPressStart: (pos) =>
+                                _showActions(m, pos),
                             onTap: m.direction ==
                                         MessageDirection.outgoing &&
                                     m.status == MessageStatus.failed
@@ -560,7 +562,8 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
                                 : null,
                             onSwipeReply: () =>
                                 setState(() => _replyingTo = m),
-                            onReactionTap: () => _showActions(m),
+                            onReactionTap: (pos) =>
+                                _showActions(m, pos),
                           );
                         },
                       );
