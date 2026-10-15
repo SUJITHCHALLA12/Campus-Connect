@@ -1,4 +1,4 @@
-# Campus Connect — Architecture (v0.4)
+# Campus Connect — Architecture (v0.5)
 
 ## Decision log
 
@@ -79,6 +79,17 @@ so a receiver who has never seen the group creates it locally on first
 message. A member out of range when a message is sent simply misses
 that message — there is no server to hold it. DB schema is v3
 (`groups` table added; v1/v2 installs migrate via `CREATE TABLE`).
+
+## Voice messages (v0.5)
+
+Voice notes are file transfers with an audio mime type — no new packet
+type. Recording (mic button in the composer, tap ✓ to send, ✕ to
+discard, 60 s cap) produces an .m4a file that travels as
+`fileStart` / `fileChunk` / `fileEnd` with `mime: audio/m4a`. The
+repository stores it with kind `voice` (sender passes the kind
+explicitly; the receiver detects `audio/*` mimes), and the chat renders
+a play/pause bubble with progress instead of a file tile. Group chats
+do not send voice yet — their composer shows the send button only.
 
 ## Data flow (sending "hi")
 

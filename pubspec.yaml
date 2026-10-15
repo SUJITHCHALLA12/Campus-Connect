@@ -1,7 +1,7 @@
 name: campus_connect
 description: Campus Connect — nearby-first campus messaging over Bluetooth Low Energy.
 publish_to: 'none'
-version: 0.4.0+1
+version: 0.5.0+1
 
 environment:
   sdk: ^3.6.0
@@ -26,6 +26,11 @@ dependencies:
   file_picker: ^8.0.0
   path_provider: ^2.1.0
   open_filex: ^4.0.0
+
+  # Voice messages: record, play back, emoji picker.
+  record: ^5.0.0
+  audioplayers: ^6.0.0
+  emoji_picker_flutter: ^4.0.0
 
 dev_dependencies:
   flutter_test:

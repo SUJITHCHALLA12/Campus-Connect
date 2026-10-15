@@ -102,8 +102,9 @@ split into frames by the codec (a 1 KB chunk fits in ≤255 frames even at
 the MTU-23 minimum). The receiver collects chunks per transfer id;
 on `fileEnd` it verifies every chunk arrived and the total byte count
 matches `fileSize`, saves the file under the app documents `received/`
-folder, stores one file message, and replies `ack` with the transfer id
-so the sender marks its file message delivered. Incomplete or corrupt
+folder, stores one file message (kind `voice` when the mime type is
+`audio/*`, so voice notes render a player bubble), and replies `ack`
+with the transfer id so the sender marks its file message delivered. Incomplete or corrupt
 transfers are dropped silently. Files are capped at 1 MB — BLE
 throughput is low (each frame is a separate GATT write), so bigger files
 are refused on the sender side before any byte goes over the air.

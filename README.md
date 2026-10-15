@@ -3,7 +3,7 @@
 Nearby-first campus messaging over **Bluetooth Low Energy**. No internet, no
 servers, no accounts — open the app near another phone running it and chat.
 
-> **Status:** v0.4 (Android). Messages are currently **plaintext**
+> **Status:** v0.5 (Android). Messages are currently **plaintext**
 > over the air; per-conversation encryption is a planned milestone, not a
 > claim. See `docs/ARCHITECTURE.md`.
 
@@ -65,10 +65,14 @@ docs/        PROTOCOL.md, ARCHITECTURE.md
    and launcher icon from the Campus Connect logo (cyan → violet on
    deep navy), splash loading page → "Dive in" → chats, image + file
    sending over BLE (1 MB cap).
-4. **M1.7 / v0.4** — Group chats + mockup home ✅ (this): bottom nav
+4. **M1.7 / v0.4** — Group chats + mockup home ✅: bottom nav
    Home / Chats / + / Groups / Profile, Chats / Groups / Updates tabs,
    centre + button → pair with nearby or create a group chat. Group
    messages fan out to every member over their 1:1 BLE link.
+5. **M1.8 / v0.5** — WhatsApp-style composer + voice ✅ (this): rounded
+   input pill (emoji · Message · attach · camera), send button when
+   typing / mic button when empty, tap-to-record voice notes (60 s cap)
+   sent as audio file transfers, emoji picker, voice bubble playback.
 5. **M2** — Privacy: ECDH + AES-GCM per conversation
 6. **M4** — Internet relay for distant users (Supabase project on standby)
 7. **M5** — iOS support
