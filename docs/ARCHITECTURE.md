@@ -263,8 +263,8 @@ unchanged; the fast paths are out-of-band (see `docs/PROTOCOL.md`).
    system accept prompt on the receiver.
 3. **BLE** (last resort) — the existing chunked transfer, 1 MB cap.
 
-**Caps.** Fast paths: 100 MB (`FastTransferConfig.fastMaxFileSize`).
-BLE fallback: 1 MB. Files over 1 MB are never loaded into memory
+**Caps.** Fast paths: larger files first, capped by
+`FastTransferConfig.fastMaxFileSize`. BLE fallback: 1 MB. Files over 1 MB are never loaded into memory
 (the fast paths stream from disk); a big file whose fast paths both
 fail is reported as failed. Group files fan out per member over the
 same paths; voice notes travel the same way (kind `voice`).
