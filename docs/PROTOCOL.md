@@ -145,9 +145,11 @@ matches `fileSize`, saves the file under the app documents `received/`
 folder, stores one file message (kind `voice` when the mime type is
 `audio/*`, so voice notes render a player bubble), and replies `ack`
 with the transfer id so the sender marks its file message delivered. Incomplete or corrupt
-transfers are dropped silently. Files are capped at 1 MB — BLE
-throughput is low (each frame is a separate GATT write), so bigger files
-are refused on the sender side before any byte goes over the air.
+transfers are dropped silently. On the BLE path, files are capped
+at 1 MB — BLE throughput is low (each frame is a separate GATT
+write), so a bigger file is only sent when a fast path (below) is
+available; over BLE alone it is refused on the sender side before
+any byte goes over the air.
 When `gid` is set on the file packets, the file is stored in that
 group conversation instead of the 1:1 chat with the sender (group
 files fan out: the sender runs one transfer per member).
@@ -175,9 +177,10 @@ faster, out-of-band paths before falling back to BLE chunking:
    the receiver.
 3. **BLE** (last resort) — the chunked transfer above, 1 MB cap.
 
-Caps: fast paths allow up to 100 MB; BLE fallback keeps the 1 MB
-cap. A big file whose fast paths both fail is reported as failed,
-not truncated. Chat text, reactions and all signalling stay on BLE.
+Caps: larger files go over the fast paths first (capped in code by
+`FastTransferConfig.fastMaxFileSize`); BLE fallback keeps the 1 MB
+cap for small files. A big file whose fast paths both fail is
+reported as failed, not truncated. Chat text, reactions and all signalling stay on BLE.
 Permissions: `NEARBY_WIFI_DEVICES` (API 33+), Wi-Fi state +
 location (API 29–31) — see `docs/ARCHITECTURE.md`.
 
@@ -200,7 +203,10 @@ describe v1 as end-to-end encrypted — see `docs/ARCHITECTURE.md` milestones.
 7. 500-char message → arrives complete (chunking works).
 8. Send a small image (< 1 MB) → receiver gets a file tile, taps it,
    and the image opens in the platform viewer.
-9. Send a > 1 MB file → sender sees the "1 MB max" notice, nothing sent.
+9. Send a file too big for BLE with no fast path available → the
+   send is refused / reported as failed rather than going over BLE;
+   with a fast path available, the same file goes over Nearby
+   Connections / Wi-Fi Direct instead.
 10. Group photo: set a photo in Group Info → it shows in the group
     header and groups list on this phone only; the other phone still
     sees the default avatar (photos are not transmitted).
