@@ -18,10 +18,11 @@ arrival, acknowledged, and stored locally in SQLite.
 Full wire spec: [`docs/PROTOCOL.md`](docs/PROTOCOL.md).
 Architecture + decision log: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-Chats also carry files: the composer has image + file buttons, and
-picked files (up to 1 MB) travel to the other phone over the same BLE
-link as chunked `fileStart` / `fileChunk` / `fileEnd` packets. Received
-files save to the app's documents folder and open with a tap.
+Chats also carry files: the composer has image + file buttons.
+Larger files go over Nearby Connections / Wi-Fi Direct first, with
+BLE as the fallback for small files (chunked `fileStart` /
+`fileChunk` / `fileEnd` packets). Received files save to the app's
+documents folder and open with a tap.
 
 ## Quick start (Windows, like your BitLock setup)
 
@@ -112,9 +113,10 @@ docs/        PROTOCOL.md, ARCHITECTURE.md
 11. **M1.14 / v0.10** — Fast file transfer ✅: files now go over
     Nearby Connections first (the Quick Share transport — BLE
     discovery, then a high-throughput Wi-Fi socket), raw Wi-Fi
-    Direct second, BLE last. Fast paths allow up to 100 MB
-    (BLE fallback keeps the 1 MB cap); chat and signalling stay
-    on BLE. Group files fan out per member over the same paths.
+    Direct second, BLE last. Larger files go over those fast
+    paths first, with BLE as the fallback for small files (BLE
+    keeps its 1 MB cap); chat and signalling stay on BLE. Group
+    files fan out per member over the same paths.
 12. **M2** — Privacy: ECDH + AES-GCM per conversation
 13. **M4** — Internet relay for distant users (Supabase project on standby)
 14. **M5** — iOS support
