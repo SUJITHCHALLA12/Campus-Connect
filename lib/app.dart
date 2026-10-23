@@ -95,11 +95,70 @@ class CampusConnectApp extends StatelessWidget {
           behavior: SnackBarBehavior.floating,
         ),
       ),
-      home: !bootstrap.ready
-          ? const SplashScreen()
-          : identity.hasIdentity
-              ? const HomeScreen()
-              : const WelcomeScreen(),
+      home: bootstrap.error != null
+          ? _StartupErrorScreen(error: bootstrap.error!)
+          : !bootstrap.ready
+              ? const SplashScreen()
+              : identity.hasIdentity
+                  ? const HomeScreen()
+                  : const WelcomeScreen(),
+    );
+  }
+}
+
+/// Shown when startup itself failed (database, identity load, …).
+/// Before this screen existed, that failure escaped as an unhandled
+/// async error and the release build died instantly on launch —
+/// tap the icon, a flash, straight back to the launcher.
+class _StartupErrorScreen extends StatelessWidget {
+  final Object error;
+  const _StartupErrorScreen({required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline,
+                  size: 56, color: CcColors.errorRed),
+              const SizedBox(height: 20),
+              Text(
+                'Campus Connect could not start',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.nunito(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: CcColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '$error',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.dmSans(color: CcColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'If this keeps happening, uninstall the app and '
+                'install the latest build from the GitHub repo — a '
+                'mismatched older install can leave data this build '
+                'cannot open.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.dmSans(color: CcColors.textMuted),
+              ),
+              const SizedBox(height: 28),
+              ElevatedButton(
+                onPressed: () => context.read<AppBootstrap>().retry(),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

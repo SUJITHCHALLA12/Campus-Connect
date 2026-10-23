@@ -1,1 +1,1 @@
-{"build":8,"notes":"Fast file transfer: Nearby Connections first, raw Wi-Fi Direct fallback, BLE last resort. 100 MB cap on fast paths.","version":"0.10.0"}
+{"build":9,"notes":"Startup fix: a startup failure (e.g. local data an older or local build left behind) no longer kills the app silently on launch — it now shows an error screen with Retry. If it still will not open, uninstall once and reinstall this build.","version":"0.10.1"}

@@ -28,6 +28,14 @@ class AppBootstrap extends ChangeNotifier {
   bool _ready = false;
   bool get ready => _ready;
 
+  /// The error that stopped startup, if any. Startup failures (a
+  /// database that can't open, corrupt preferences, …) are captured
+  /// here and shown on an error screen instead of escaping as an
+  /// unhandled async error — in a release build an unhandled error
+  /// kills the app instantly, before anything renders.
+  Object? _error;
+  Object? get error => _error;
+
   Future<void>? _initFuture;
 
   Future<void> init() {
@@ -35,12 +43,26 @@ class AppBootstrap extends ChangeNotifier {
     return _initFuture!;
   }
 
+  /// Re-runs startup after a failure (the error screen's Retry).
+  Future<void> retry() {
+    _initFuture = null;
+    _error = null;
+    notifyListeners();
+    return init();
+  }
+
   Future<void> _doInit() async {
-    await Future.wait([
-      _initWork(),
-      // Minimum splash display time.
-      Future.delayed(const Duration(milliseconds: 1200)),
-    ]);
+    try {
+      await Future.wait([
+        _initWork(),
+        // Minimum splash display time.
+        Future.delayed(const Duration(milliseconds: 1200)),
+      ]);
+    } catch (e) {
+      _error = e;
+      notifyListeners();
+      return;
+    }
     _ready = true;
     notifyListeners();
   }

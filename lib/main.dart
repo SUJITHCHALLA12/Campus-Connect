@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -10,7 +13,23 @@ import 'data/chat_repository.dart';
 import 'transfer/fast_file_transfer.dart';
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // Safety net: an unhandled async error in a release build kills
+  // the process instantly (the app "opens" and comes straight back).
+  // Log stray errors instead of dying on them; startup's own work is
+  // additionally guarded inside AppBootstrap, which surfaces real
+  // failures on an error screen.
+  runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    await _startApp();
+  }, (error, stack) {
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('Campus Connect unhandled error: $error\n$stack');
+    }
+  });
+}
+
+Future<void> _startApp() async {
 
   // Instances are created up front; the heavy async work (database,
   // identity load) runs after the splash screen is on screen, via
